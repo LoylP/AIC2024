@@ -57,3 +57,13 @@ def query(query_text):
         "query_time": query_time,
         "results": results
     }
+
+def get_all_data():
+    try:
+        # Lấy tất cả dữ liệu từ Milvus
+        all_entities = collection.query(expr=None, output_fields=["file_path"])
+        results = [entity["file_path"] for entity in all_entities]
+        return results
+    except Exception as e:
+        print(f"Error retrieving data from Milvus: {str(e)}")
+        return []

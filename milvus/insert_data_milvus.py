@@ -5,11 +5,12 @@ from PIL import Image
 import numpy as np
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType
 from dotenv import load_dotenv
+
 load_dotenv()
 
 uri = os.getenv('MILVUS_URI')
 token = os.getenv('MILVUS_TOKEN')
-image_folder = "static/images"
+image_folder = "/home/nguyenhoangphuc-22521129/AIC2024/static/HCMAI22_MiniBatch1/Keyframes/C00_V0000"
 
 
 # Connect to Milvus
@@ -57,4 +58,4 @@ index_params = {
 }
 collection.create_index(field_name="embedding", index_params=index_params)
 
-print("All images have been inserted.")
+print(f"Total images inserted: {id_counter}")

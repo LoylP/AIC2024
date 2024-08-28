@@ -4,10 +4,13 @@ import open_clip
 from PIL import Image
 import numpy as np
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType
+from dotenv import load_dotenv
+load_dotenv()
 
+uri = os.getenv('MILVUS_URI')
+token = os.getenv('MILVUS_TOKEN')
 image_folder = "static/images"
-uri = "https://in01-07c9bfcb4ff890e.aws-ap-southeast-1.vectordb.zillizcloud.com:19531"
-token = "db_admin:Uw2?M0(6>)VN1RMb"  # Replace with your actual token
+
 
 # Connect to Milvus
 connections.connect(alias="default", uri=uri, token=token)

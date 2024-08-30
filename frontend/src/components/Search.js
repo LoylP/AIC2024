@@ -4,8 +4,10 @@ const Search = () => {
   const [inputType, setInputType] = useState("text");
   const [searchValue, setSearchValue] = useState("");
   const [results, setResults] = useState([]);
-
   const [currentPage, setCurrentPage] = useState(1);
+  const [useOcr, setUseOcr] = useState(false);
+  const [ocrDescription, setOcrDescription] = useState("");
+
   const itemsPerPage = 20;
 
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -23,17 +25,17 @@ const Search = () => {
     }
 
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/search?search_query=${encodeURIComponent(
-          searchValue
-        )}`,
-        {
-          method: "GET",
-          headers: {
-            accept: "application/json",
-          },
-        }
-      );
+      let url = `http://127.0.0.1:8000/api/search?search_query=${encodeURIComponent(searchValue)}`;
+      if (useOcr && ocrDescription) {
+        url += `&ocr_filter=${encodeURIComponent(ocrDescription)}`;
+      }
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+        },
+      });
 
       if (!response.ok) {
         throw new Error("Network response was not ok");
@@ -60,35 +62,59 @@ const Search = () => {
 
   return (
     <div className="rounded-xl mx-5">
-      <div className="mt-[2%] flex items-center justify-center text-black">
-        <input
-          className={`bg-gray-50 border rounded-l-lg border-gray-300 w-[50%] h-full indent-2 p-2.5 outline-none focus:border-blue-500 focus:ring-2 ${
-            inputType === "file" ? "text-sm" : "text-lg"
-          }`}
-          type={inputType === "file" ? "file" : "search"}
-          placeholder={
-            inputType === "file" ? "Choose a file..." : "Search Anything..."
-          }
-          onChange={inputType === "file" ? handleFileChange : handleInputChange}
-        />
-        <button
-          onClick={handleButtonSearch}
-          disabled={inputType === "text" ? !searchValue : false}
-          className={`bg-blue-800 px-6 py-2.5 text-white focus:ring-2 focus:ring-blue-300 disabled:bg-gray-400 rounded-r-lg ${
-            inputType === "file" ? "text-xl" : ""
-          }`}
-        >
-          Search
-        </button>
+      <div className="mt-[2%] flex flex-col items-center justify-center text-black">
+        <div className="flex items-center w-full justify-center">
+          <input
+            className={`bg-gray-50 border rounded-l-lg border-gray-300 w-[50%] h-full indent-2 p-2.5 outline-none focus:border-blue-500 focus:ring-2 ${
+              inputType === "file" ? "text-sm" : "text-lg"
+            }`}
+            type={inputType === "file" ? "file" : "search"}
+            placeholder={
+              inputType === "file" ? "Choose a file..." : "Search Anything..."
+            }
+            onChange={inputType === "file" ? handleFileChange : handleInputChange}
+          />
+          <button
+            onClick={handleButtonSearch}
+            disabled={inputType === "text" ? !searchValue : false}
+            className={`bg-blue-800 px-6 py-2.5 text-white focus:ring-2 focus:ring-blue-300 disabled:bg-gray-400 rounded-r-lg ${
+              inputType === "file" ? "text-xl" : ""
+            }`}
+          >
+            Search
+          </button>
 
-        <select
-          className="bg-gray-50 border border-gray-300 text-sm p-2.5 rounded-md ml-[10%]"
-          value={inputType}
-          onChange={(e) => setInputType(e.target.value)}
-        >
-          <option value="text">Search Text</option>
-          <option value="file">Upload File</option>
-        </select>
+          <select
+            className="bg-gray-50 border border-gray-300 text-sm p-2.5 rounded-md ml-[10%]"
+            value={inputType}
+            onChange={(e) => setInputType(e.target.value)}
+          >
+            <option value="text">Search Text</option>
+            <option value="file">Upload File</option>
+          </select>
+
+          <div className="ml-4 flex flex-col items-center">
+            <button
+              onClick={() => setUseOcr(!useOcr)}
+              className={`px-4 py-2.5 rounded ${
+                useOcr ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
+              }`}
+            >
+              OCR
+            </button>
+          </div>
+        </div>
+        
+        {useOcr && (
+          <div className="mt-2 w-full flex justify-end mr-[20%]">
+            <textarea
+              placeholder="Enter OCR description"
+              value={ocrDescription}
+              onChange={(e) => setOcrDescription(e.target.value)}
+              className="bg-gray-50 border border-gray-300 text-sm p-2.5 rounded-md resize-none"
+            />
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl bg-slate-600 mx-[1%]">
@@ -124,7 +150,6 @@ const Search = () => {
                     src={`http://127.0.0.1:8000/images/${image.path}`}
                     alt={image.file}
                   />
-                  {/* <div className="absolute inset-0 border-4 border-gray-400 rounded-lg pointer-events-none"></div> */}
                   <div className="absolute bottom-0 left-0  text-white p-2 rounded-b-lg flex">
                     <div className="mx-2 bg-black bg-opacity-40 hover:bg-opacity-100">
                       {image.frame}

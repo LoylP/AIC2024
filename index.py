@@ -5,50 +5,60 @@ import numpy as np
 import faiss
 import json
 from sentence_transformers import SentenceTransformer
-import pytesseract
 import cv2
+import easyocr
+import re
 
 model = SentenceTransformer('clip-ViT-B-32')
 
 image_path = "/home/nguyenhoangphuc-22521129/AIC2024/static/HCMAI22_MiniBatch1/Keyframes"
-chunk_size = 256
+chunk_size = 32
+# max_images = 50  # Set the maximum number of images to process
 
 embeddings = []
 image_files = []
 ocr_texts = {}  # Dictionary to store OCR results
 
-def perform_ocr(image_file):
-    try:
-        # Read image using OpenCV
-        img = cv2.imread(image_file)
-        
-        # Convert to grayscale
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        # Apply thresholding to preprocess the image
-        gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-        
-        # Apply dilation to connect text components
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
-        gray = cv2.dilate(gray, kernel, iterations=1)
-        
-        # Perform OCR on the preprocessed image
-        text = pytesseract.image_to_string(gray)
-        
-        # If no text is found, try again with the original image
-        if not text.strip():
-            text = pytesseract.image_to_string(Image.open(image_file))
-        
-        return text.strip()
-    except Exception as e:
-        print(f"OCR failed for {image_file}: {str(e)}")
-        return ""
+def preprocess_image(image_path):
+    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    denoised = cv2.fastNlMeansDenoising(img, None, 10, 7, 21)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    contrast = clahe.apply(denoised)
+    return contrast
+
+def perform_ocr(image_path):
+    processed_img = preprocess_image(image_path)
+    reader = easyocr.Reader(['vi', 'en'], gpu=True)
+    results = reader.readtext(processed_img)
+    return results
+
+vietnamese_pattern = re.compile(r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]')
+
+def is_vietnamese_text(text: str) -> bool:
+    vietnamese_words = vietnamese_pattern.findall(text)
+    return len(vietnamese_words) >= 2
+
+def clean_text(text: str) -> str:
+    return ' '.join(text.split())
+
+def process_ocr_result(ocr_results: list) -> str:
+    processed_lines = []
+    
+    for (bbox, text, prob) in ocr_results:
+        cleaned_text = clean_text(text)
+        if (len(cleaned_text) > 3 and is_vietnamese_text(cleaned_text)) or (len(cleaned_text) > 2 and prob > 0.7):
+            processed_lines.append(cleaned_text)
+    
+    return ' '.join(processed_lines)
 
 for folder in os.listdir(image_path):
     folder_path = os.path.join(image_path, folder)
     
     if os.path.isdir(folder_path):
         image_files.extend(glob(os.path.join(folder_path, "*.jpg")))
+        # if len(image_files) >= max_images:            ### chạy với số lượng ảnh nhất định
+        #     image_files = image_files[:max_images]    ###  
+        #     break                                     ###
 
 # Generate embeddings and perform OCR for images
 for i in range(0, len(image_files), chunk_size):
@@ -61,8 +71,12 @@ for i in range(0, len(image_files), chunk_size):
     
     # Perform OCR
     for image_file in chunk:
-        ocr_text = perform_ocr(image_file)
-        ocr_texts[os.path.relpath(image_file, image_path)] = ocr_text
+        ocr_results = perform_ocr(image_file)
+        # print("trước khi xử lý: ", ocr_results)
+        filtered_text = process_ocr_result(ocr_results)
+        # print("sau khi xử lý: ", filtered_text)
+        ocr_texts[os.path.relpath(image_file, image_path)] = filtered_text
+        # print("kq: ", ocr_texts)
 
 # Create vectorDB with FAISS
 dimension = len(embeddings[0])

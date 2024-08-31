@@ -1,169 +1,244 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 const Search = () => {
   const [inputType, setInputType] = useState("text");
   const [searchValue, setSearchValue] = useState("");
   const [results, setResults] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [useOcr, setUseOcr] = useState(false);
   const [ocrDescription, setOcrDescription] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const modalRef = useRef(null);
 
   const itemsPerPage = 20;
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = results.slice(indexOfFirstItem, indexOfLastItem);
+  const currentItems = Array.isArray(results) ? results.slice(indexOfFirstItem, indexOfLastItem) : [];
 
   const handleInputChange = (e) => {
     setSearchValue(e.target.value);
   };
 
   const handleButtonSearch = async () => {
-    if (inputType === "file") {
-      console.log("File selected");
-      return;
-    }
-
     try {
-      let url = `http://127.0.0.1:8000/api/search?search_query=${encodeURIComponent(searchValue)}`;
-      if (useOcr && ocrDescription) {
-        url += `&ocr_filter=${encodeURIComponent(ocrDescription)}`;
+      let response;
+      if (inputType === "text") {
+        const url = new URL("http://127.0.0.1:8000/api/search");
+        url.searchParams.append("search_query", searchValue);
+        url.searchParams.append("ocr_filter", ocrDescription);
+        url.searchParams.append("results", "100");
+        
+        response = await fetch(url);
+      } else if (inputType === "file" && selectedFile) {
+        const formData = new FormData();
+        formData.append("image", selectedFile);
+        
+        const url = new URL("http://127.0.0.1:8000/api/search_by_image");
+        url.searchParams.append("ocr_filter", ocrDescription);
+        url.searchParams.append("results", "100");
+        
+        response = await fetch(url, {
+          method: "POST",
+          body: formData,
+        });
       }
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-
       const data = await response.json();
-      setResults(data);
+      setResults(Array.isArray(data) ? data : []);
       setCurrentPage(1);
     } catch (error) {
-      console.error("Error fetching data:", error);
+      console.error("Error during search:", error);
+      setResults([]);
     }
   };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    console.log(file);
+    setSelectedFile(file);
   };
 
-  const totalPages = Math.ceil(results.length / itemsPerPage);
+  const totalPages = Math.ceil((Array.isArray(results) ? results.length : 0) / itemsPerPage);
 
   const handlePageClick = (pageNum) => {
     setCurrentPage(pageNum);
   };
 
-  return (
-    <div className="rounded-xl mx-5">
-      <div className="mt-[2%] flex flex-col items-center justify-center text-black">
-        <div className="flex items-center w-full justify-center">
-          <input
-            className={`bg-gray-50 border rounded-l-lg border-gray-300 w-[50%] h-full indent-2 p-2.5 outline-none focus:border-blue-500 focus:ring-2 ${
-              inputType === "file" ? "text-sm" : "text-lg"
-            }`}
-            type={inputType === "file" ? "file" : "search"}
-            placeholder={
-              inputType === "file" ? "Choose a file..." : "Search Anything..."
-            }
-            onChange={inputType === "file" ? handleFileChange : handleInputChange}
-          />
-          <button
-            onClick={handleButtonSearch}
-            disabled={inputType === "text" ? !searchValue : false}
-            className={`bg-blue-800 px-6 py-2.5 text-white focus:ring-2 focus:ring-blue-300 disabled:bg-gray-400 rounded-r-lg ${
-              inputType === "file" ? "text-xl" : ""
-            }`}
-          >
-            Search
-          </button>
+  const handleImageClick = (image) => {
+    setSelectedImage(image);
+    setShowModal(true);
+  };
 
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setSelectedImage(null);
+  };
+
+  const handleSearchSimilar = async () => {
+    if (selectedImage) {
+      try {
+        const url = new URL("http://127.0.0.1:8000/api/search_similar");
+        url.searchParams.append("image_path", selectedImage.path);
+        if (ocrDescription) {
+          url.searchParams.append("ocr_filter", ocrDescription);
+        }
+        url.searchParams.append("results", "100");
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+        const data = await response.json();
+        setResults(data);
+        setCurrentPage(1);
+        setShowModal(false);
+      } catch (error) {
+        console.error("Error during similar image search:", error);
+      }
+    }
+  };
+
+  const handleReset = () => {
+    setInputType("text");
+    setSearchValue("");
+    setResults([]);
+    setCurrentPage(1);
+    setOcrDescription("");
+    setSelectedFile(null);
+    setSelectedImage(null);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        handleCloseModal();
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  return (
+    <div className="flex flex-col h-screen">
+      <div className="flex flex-1 ">
+        {/* Search panel - 1/5 of the screen */}
+        <div className="w-1/5 bg-slate-300 p-4 flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold text-black">Search</h2>
+            <button
+              onClick={handleReset}
+              className="bg-gray-300 text-black px-3 py-1 rounded hover:bg-gray-400"
+            >
+              Reset
+            </button>
+          </div>
           <select
-            className="bg-gray-50 border border-gray-300 text-sm p-2.5 rounded-md ml-[10%]"
+            className="mb-4 p-2 border rounded text-black"
             value={inputType}
             onChange={(e) => setInputType(e.target.value)}
           >
             <option value="text">Search Text</option>
             <option value="file">Upload File</option>
           </select>
+          {inputType === "text" ? (
+            <input
+              className="mb-4 p-2 border rounded text-black"
+              type="search"
+              placeholder="Search Anything..."
+              onChange={handleInputChange}
+              value={searchValue}
+            />
+          ) : (
+            <input
+              className="mb-4 p-2 border rounded text-black"
+              type="file"
+              onChange={handleFileChange}
+            />
+          )}
+          <button
+            onClick={handleButtonSearch}
+            disabled={inputType === "text" ? !searchValue : !selectedFile}
+            className="mb-4 bg-blue-500 text-white p-2 rounded disabled:bg-gray-300"
+          >
+            Search
+          </button>
+          <textarea
+            placeholder="Enter OCR description"
+            value={ocrDescription}
+            onChange={(e) => setOcrDescription(e.target.value)}
+            className="mb-4 p-2 border rounded resize-none text-black"
+          />
+        </div>
 
-          <div className="ml-4 flex flex-col items-center">
+        {/* Results panel - 4/5 of the screen */}
+        <div className="w-4/5 bg-slate-100 p-4">
+          {Array.isArray(results) && results.length > 0 && (
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-black">Results: </h2>
+                <div className="flex">
+                  {[...Array(totalPages)].map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handlePageClick(index + 1)}
+                      className={`mx-1 px-3 py-1 rounded ${
+                        currentPage === index + 1 ? "bg-blue-500 text-white" : "bg-gray-200 text-black"
+                      }`}
+                    >
+                      {index + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {currentItems.map((image) => (
+                  <div key={image.id} className="cursor-pointer relative" onClick={() => handleImageClick(image)}>
+                    <img
+                      className="w-full h-40 object-cover rounded shadow-md"
+                      src={`http://127.0.0.1:8000/images/${image.path}`}
+                      alt={image.file}
+                    />
+                    <div className="absolute inset-0 flex flex-col justify-end p-2">
+                      <div className="bg-black bg-opacity-40 p-1 rounded">
+                        <p className="text-white text-sm truncate">{image.frame} {image.file}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal for image details */}
+      {showModal && selectedImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div ref={modalRef} className="bg-white p-6 rounded-lg max-w-3xl w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-black">{selectedImage.file}</h2>
+              <button onClick={handleCloseModal} className="text-2xl text-black">&times;</button>
+            </div>
+            <img
+              src={`http://127.0.0.1:8000/images/${selectedImage.path}`}
+              alt={selectedImage.file}
+              className="w-full mb-4 rounded"
+            />
+            <p className="mb-2 text-black"><strong>Frame:</strong> {selectedImage.frame}</p>
+            <p className="mb-2 text-black"><strong>File:</strong> {selectedImage.file}</p>
+            <p className="mb-2 text-black"><strong>OCR Text:</strong> {selectedImage.ocr_text}</p>
             <button
-              onClick={() => setUseOcr(!useOcr)}
-              className={`px-4 py-2.5 rounded ${
-                useOcr ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
-              }`}
+              onClick={handleSearchSimilar}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
             >
-              OCR
+              Search Similar Images
             </button>
           </div>
         </div>
-        
-        {useOcr && (
-          <div className="mt-2 w-full flex justify-end mr-[20%]">
-            <textarea
-              placeholder="Enter OCR description"
-              value={ocrDescription}
-              onChange={(e) => setOcrDescription(e.target.value)}
-              className="bg-gray-50 border border-gray-300 text-sm p-2.5 rounded-md resize-none"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-xl bg-slate-600 mx-[1%]">
-        {results.length > 0 && (
-          <div className="mt-4 mx-5">
-            <h2 className="text-lg text-white font-bold">Search Results:</h2>
-            <div className="flex items-center justify-end mb-2">
-              {/* Page Numbers */}
-              <div className="flex space-x-2">
-                {[...Array(totalPages)].map((_, index) => {
-                  const pageNum = index + 1;
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => handlePageClick(pageNum)}
-                      className={`px-3 py-1 rounded ${
-                        currentPage === pageNum
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-300 text-black"
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-              {currentItems.map((image) => (
-                <div key={image.id} className="relative">
-                  <img
-                    className="h-full w-full object-cover rounded-lg shadow-md"
-                    src={`http://127.0.0.1:8000/images/${image.path}`}
-                    alt={image.file}
-                  />
-                  <div className="absolute bottom-0 left-0  text-white p-2 rounded-b-lg flex">
-                    <div className="mx-2 bg-black bg-opacity-40 hover:bg-opacity-100">
-                      {image.frame}
-                    </div>
-                    <div className="bg-black bg-opacity-40 hover:bg-opacity-100">
-                      {image.file}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };

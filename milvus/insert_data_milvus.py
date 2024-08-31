@@ -10,7 +10,7 @@ load_dotenv()
 
 uri = os.getenv('MILVUS_URI')
 token = os.getenv('MILVUS_TOKEN')
-image_folder = "/home/nguyenhoangphuc-22521129/AIC2024/static/HCMAI22_MiniBatch1/Keyframes/C00_V0000"
+image_folder = "F:\AI Challenge\AIC2024\AIC2024\static\HCM22_MiniBatch1\Keyframes"
 
 
 # Connect to Milvus

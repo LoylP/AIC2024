@@ -1,0 +1,78 @@
+.text-logo{
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #049d9b;
+    text-decoration: none;
+    margin-left: 1rem;
+    margin-top: 0.5rem;
+}
+.text-search-btn {
+    text-align: center;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-size: 20px;
+    letter-spacing: 4px;
+    position: relative;
+    background-color: #049d9b;
+    border: none;
+    color: #fff;
+    padding: 10px;
+    width: 100%;
+    text-align: center;
+    transition-duration: 0.4s;
+    overflow: hidden;
+    box-shadow: 0 5px 10px #414446;
+    border-radius: 20px;
+}
+
+.text-search-btn:hover {
+    background: #fff;
+    box-shadow: 0px 2px 10px 5px #1abc9c;
+    color: #000;
+}
+
+.text-search-btn:after {
+    content: "";
+    background: #1abc9c;
+    display: block;
+    position: absolute;
+    padding-top: 300%;
+    padding-left: 350%;
+    margin-left: -20px !important;
+    margin-top: -120%;
+    opacity: 0;
+    transition: all 0.8s
+}
+
+.text-search-btn:active:after {
+    padding: 0;
+    margin: 0;
+    opacity: 1;
+    transition: 0s
+}
+
+.text-search-btn:focus {
+    outline: 0;
+}
+#ocr-textarea{
+    width: 100%;
+    border-radius: 20px;
+    padding: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 0 10px rgba(27, 27, 27, 0.1);
+}
+#ocr-textarea:focus{
+        border: 2px solid #079e9c;
+}
+#pagination-button{
+    
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    border-radius:30px;
+}
+#pagination-button:hover{
+    background-color: #079e9c;
+}

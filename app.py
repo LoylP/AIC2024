@@ -6,6 +6,7 @@ import faiss
 import torch
 from sentence_transformers import SentenceTransformer
 import pytesseract
+from io import BytesIO
 
 class App:
     def __init__(self):
@@ -33,7 +34,6 @@ class App:
         text_features = self.model.encode([search_text])
         text_features = text_features.astype('float32')
         
-        # Perform the main search
         D, I = self.index.search(text_features, len(self.image_paths))
         search_results = []
         
@@ -44,11 +44,12 @@ class App:
             
             similarity = float(D[0][i])
             
-            # If OCR filter is provided, adjust similarity score
             if ocr_filter:
                 ocr_match_score = self._ocr_match_score(ocr_text, ocr_filter)
-                # Combine similarity scores (you can adjust the weights)
-                similarity = similarity * 0.7 + ocr_match_score * 0.3
+                if ocr_match_score > 0:  # Only include results that match OCR filter
+                    similarity = similarity * 0.6 + ocr_match_score * 0.4
+                else:
+                    continue  
             
             result = {
                 'path': image_path,
@@ -57,18 +58,48 @@ class App:
             }
             search_results.append(result)
         
-        # Sort results by combined similarity score
         search_results.sort(key=lambda x: x['similarity'], reverse=True)
-        
-        # Return the top 'results' number of items
         return search_results[:results]
 
     def _ocr_match_score(self, ocr_text, ocr_filter):
-        # Simple scoring based on word matching
         ocr_words = set(ocr_text.lower().split())
         filter_words = set(ocr_filter.lower().split())
         matching_words = ocr_words.intersection(filter_words)
         return len(matching_words) / len(filter_words) if filter_words else 0
+
+    def search_by_image(self, image_file, ocr_filter=None, results=100):
+        # processing input image
+        image = Image.open(BytesIO(image_file))
+        image_features = self.model.encode(image)
+        image_features = image_features.astype('float32').reshape(1, -1)
+        
+        # similarity image
+        D, I = self.index.search(image_features, len(self.image_paths))
+        search_results = []
+        
+        for i in range(len(I[0])):
+            idx = int(I[0][i])
+            image_path = self.image_paths[idx]
+            ocr_text = self.ocr_texts.get(image_path, "")
+            
+            similarity = float(D[0][i])
+            
+            if ocr_filter:
+                ocr_match_score = self._ocr_match_score(ocr_text, ocr_filter)
+                if ocr_match_score > 0:  # Only include results that match OCR filter
+                    similarity = similarity * 0.6 + ocr_match_score * 0.4
+                else:
+                    continue 
+            
+            result = {
+                'path': image_path,
+                'similarity': similarity,
+                'ocr_text': ocr_text
+            }
+            search_results.append(result)
+        
+        search_results.sort(key=lambda x: x['similarity'], reverse=True)
+        return search_results[:results]
 
     def run(self):
         while True:

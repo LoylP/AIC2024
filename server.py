@@ -43,58 +43,86 @@ db = client['obj-detection']
 collection = db['object-detection-results']
 
 
+@app.get("/api/get-all-objects")
+async def get_all_objects():
+    # Load unique_classes.json file from static folder
+    with open('static/unique_classes.json') as f:
+        unique_classes = json.load(f)
+    return unique_classes
+
+
 @app.get("/api/search")
 async def search(
-    search_query: str,
-    obj_filters: Optional[List[str]] = Query(
-        None)  # Accept multiple object filters
+    search_query: Optional[str] = None,
+    obj_filters: Optional[List[str]] = Query(None),
+    obj_position_filters: Optional[str] = None
 ):
     app_instance = App()
-    search_results = app_instance.search(search_query, results=100)
+    search_results = app_instance.search(
+        search_query, results=100) if search_query else []
 
     if not isinstance(search_results, list):
         raise HTTPException(status_code=400, detail="Invalid search results")
 
-    # Extract file paths from search results and remove '.jpg'
     file_paths = [os.path.splitext(image_info['path'])[0] if isinstance(
         image_info, dict) and 'path' in image_info else os.path.splitext(image_info)[0] for image_info in search_results]
 
     image_data_list = []
 
+    mongo_query = {
+        "path": {"$in": file_paths}
+    }
+
+    # Process object filters if provided
     if obj_filters:
-        # Build the MongoDB query for object filters
-        mongo_query = {
-            "path": {"$in": file_paths}
-        }
-
-        # Parse each obj filter (e.g., "Person=3", "Woman=2") and add to the query
         for obj_filter in obj_filters:
-            filter_key, filter_value = obj_filter.split('=')
-            filter_value = int(filter_value)
-            mongo_query[f"detection_class_entities.{filter_key}"] = filter_value
+            for key_value in obj_filter.split(','):
+                filter_key, filter_value = key_value.split('=')
+                filter_value = int(filter_value)
+                mongo_query[f"detection_class_entities.{filter_key}"] = filter_value
 
-        # Query the MongoDB collection for matching object detection data
-        object_detection_results = list(collection.find(mongo_query))
+    # Process position filters if provided
+    if obj_position_filters:
+        position_query = {}
+        for pos_filter in obj_position_filters.split(','):
+            filter_key, filter_value = pos_filter.split('=')
+            filter_value = float(filter_value)
+            if filter_key in ['xmin', 'ymin', 'xmax', 'ymax']:
+                position_query[filter_key] = {"$gte": filter_value}
 
-        # Filter search results based on object filters
-        for idx, image_info in enumerate(search_results):
-            image_path = os.path.splitext(image_info['path'])[0] if isinstance(
-                image_info, dict) and 'path' in image_info else os.path.splitext(image_info)[0]
+        if position_query:
+            mongo_query['detection_boxes'] = {
+                "$elemMatch": position_query
+            }
 
-            # Check if image_path matches any file_path in object_detection_results
-            if any(result['path'] == image_path for result in object_detection_results):
-                frame, file = os.path.split(image_info['path'])
-                image_data = ImageData(
-                    id=idx + 1,
-                    frame=frame,
-                    file=file,
-                    path=image_info['path']
-                )
-                image_data_list.append(image_data.dict())
+    object_detection_results = list(collection.find(mongo_query))
 
+    # Further filter results based on bounding box positions
+    filtered_results = []
+    if obj_position_filters:
+        for result in object_detection_results:
+            boxes = result.get('detection_boxes', [])
+            if boxes:
+                for box in boxes:
+                    xmin, ymin, xmax, ymax = map(float, box)
+                    if (
+                        ('xmin' not in position_query or xmin >= position_query.get('xmin', {}).get('$gte', 0)) and
+                        ('ymin' not in position_query or ymin >= position_query.get('ymin', {}).get('$gte', 0)) and
+                        ('xmax' not in position_query or xmax <= position_query.get('xmax', {}).get('$lte', 1)) and
+                        ('ymax' not in position_query or ymax <=
+                         position_query.get('ymax', {}).get('$lte', 1))
+                    ):
+                        filtered_results.append(result)
+                        break
     else:
-        # No object filter, return all search results
-        for idx, image_info in enumerate(search_results):
+        filtered_results = object_detection_results
+
+    # Build the response list
+    for idx, image_info in enumerate(search_results):
+        image_path = os.path.splitext(image_info['path'])[0] if isinstance(
+            image_info, dict) and 'path' in image_info else os.path.splitext(image_info)[0]
+
+        if any(result['path'] == image_path for result in filtered_results):
             frame, file = os.path.split(image_info['path'])
             image_data = ImageData(
                 id=idx + 1,

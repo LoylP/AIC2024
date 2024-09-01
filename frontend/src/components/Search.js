@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Spin } from "antd";
-import Header from "./Header";
+import { Spin, Collapse, Select, Input, Button } from "antd";
 import logo from "../static/logo.png";
 import "./Search.css";
+import { PlusOutlined, MinusOutlined } from "@ant-design/icons";
+
+const { Panel } = Collapse;
+const { Option } = Select;
+
 const Search = () => {
 	const [inputType, setInputType] = useState("text");
 	const [searchValue, setSearchValue] = useState("");
@@ -13,6 +17,8 @@ const Search = () => {
 	const [selectedImage, setSelectedImage] = useState(null);
 	const [showModal, setShowModal] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [objectFilters, setObjectFilters] = useState([{ class: "", value: "" }]);
+	const [classes, setClasses] = useState([]); // New state for class options
 	const modalRef = useRef(null);
 
 	const itemsPerPage = 20;
@@ -21,18 +27,41 @@ const Search = () => {
 	const indexOfFirstItem = indexOfLastItem - itemsPerPage;
 	const currentItems = Array.isArray(results) ? results.slice(indexOfFirstItem, indexOfLastItem) : [];
 
+	useEffect(() => {
+		// Fetch class options from unique_classes.json
+		const fetchClasses = async () => {
+			try {
+				const response = await fetch("http://localhost:8000/api/get-all-objects/"); // Update with the correct path
+				const data = await response.json();
+				setClasses(data);
+			} catch (error) {
+				console.error("Error fetching class options:", error);
+			}
+		};
+
+		fetchClasses();
+	}, []);
 	const handleInputChange = (e) => {
 		setSearchValue(e.target.value);
 	};
 
 	const handleButtonSearch = async () => {
-		setIsLoading(true); // Start loading
+		setIsLoading(true);
 		try {
 			let response;
+			// Construct the obj_filters parameter
+			const objFiltersString = objectFilters
+				.filter((filter) => filter.class && filter.value)
+				.map((filter) => `${filter.class}=${filter.value}`)
+				.join(",");
+
 			if (inputType === "text") {
 				const url = new URL("http://127.0.0.1:8000/api/search");
 				url.searchParams.append("search_query", searchValue);
 				url.searchParams.append("ocr_filter", ocrDescription);
+				if (objFiltersString) {
+					url.searchParams.append("obj_filters", objFiltersString);
+				}
 				url.searchParams.append("results", "100");
 
 				response = await fetch(url);
@@ -42,6 +71,9 @@ const Search = () => {
 
 				const url = new URL("http://127.0.0.1:8000/api/search_by_image");
 				url.searchParams.append("ocr_filter", ocrDescription);
+				if (objFiltersString) {
+					url.searchParams.append("obj_filters", objFiltersString);
+				}
 				url.searchParams.append("results", "100");
 
 				response = await fetch(url, {
@@ -56,7 +88,7 @@ const Search = () => {
 			console.error("Error during search:", error);
 			setResults([]);
 		} finally {
-			setIsLoading(false); // End loading
+			setIsLoading(false);
 		}
 	};
 
@@ -83,7 +115,7 @@ const Search = () => {
 
 	const handleSearchSimilar = async () => {
 		if (selectedImage) {
-			setIsLoading(true); // Start loading
+			setIsLoading(true);
 			try {
 				const url = new URL("http://127.0.0.1:8000/api/search_similar");
 				url.searchParams.append("image_path", selectedImage.path);
@@ -103,7 +135,7 @@ const Search = () => {
 			} catch (error) {
 				console.error("Error during similar image search:", error);
 			} finally {
-				setIsLoading(false); // End loading
+				setIsLoading(false);
 			}
 		}
 	};
@@ -116,6 +148,21 @@ const Search = () => {
 		setOcrDescription("");
 		setSelectedFile(null);
 		setSelectedImage(null);
+		setObjectFilters([{ class: "", value: "" }]);
+	};
+
+	const addObjectFilter = () => {
+		setObjectFilters([...objectFilters, { class: "", value: "" }]);
+	};
+
+	const removeObjectFilter = (index) => {
+		setObjectFilters(objectFilters.filter((_, i) => i !== index));
+	};
+
+	const handleObjectFilterChange = (index, field, value) => {
+		const newFilters = [...objectFilters];
+		newFilters[index][field] = value;
+		setObjectFilters(newFilters);
 	};
 
 	useEffect(() => {
@@ -134,9 +181,13 @@ const Search = () => {
 	return (
 		<div>
 			<div className="flex flex-col h-screen">
-				<div className="flex flex-1 ">
+				<div className="flex flex-1">
 					{/* Search panel - 1/5 of the screen */}
-					<div className="w-1/5 bg-slate-300 p-4 flex flex-col" style={{ backgroundColor: "white" }}>
+					<div
+						className="w-1/5 bg-slate-300 p-4 flex flex-col"
+						style={{
+							backgroundColor: "white",
+						}}>
 						<img
 							src={logo}
 							alt="logo"
@@ -185,19 +236,53 @@ const Search = () => {
 							className="text-search-btn">
 							Search
 						</button>
-						<h2 className="text-2xl font-bold text-black mt-4">OCR Filter</h2>
-						<textarea
-							placeholder="Enter OCR description"
-							value={ocrDescription}
-							onChange={(e) => setOcrDescription(e.target.value)}
-							className="mb-4 p-2 border rounded resize-none text-black"
-							id="ocr-textarea"
-						/>
+						<Collapse defaultActiveKey={["1", "2"]} style={{ padding: 10, marginTop: 30 }}>
+							<Panel header="OCR Filter" key="1" style={{ fontSize: 20, fontWeight: 500 }}>
+								<textarea
+									placeholder="Enter OCR description"
+									value={ocrDescription}
+									onChange={(e) => setOcrDescription(e.target.value)}
+									className="mb-4 p-2 border rounded resize-none text-black"
+									id="ocr-textarea"
+								/>
+							</Panel>
+							<Panel header="Object Filter" key="2" style={{ fontSize: 20, fontWeight: 500 }}>
+								{objectFilters.map((filter, index) => (
+									<div key={index} className="mb-4 flex items-center">
+										<Select
+											className="mr-2 w-full max-w-xs"
+											placeholder="Select object class"
+											style={{ width: 1000 }}
+											showSearch
+											value={filter.class}
+											onChange={(value) => handleObjectFilterChange(index, "class", value)}>
+											{classes.map((className, idx) => (
+												<Option key={idx} value={className}>
+													{className}
+												</Option>
+											))}
+										</Select>
+										<Input
+											className="mr-2"
+											placeholder="Filter value"
+											value={filter.value}
+											onChange={(e) => handleObjectFilterChange(index, "value", e.target.value)}
+										/>
+										<Button onClick={() => removeObjectFilter(index)} type="danger">
+											Remove
+										</Button>
+									</div>
+								))}
+								<Button onClick={addObjectFilter} type="dashed" style={{ width: "100%" }}>
+									Add Object Filter
+								</Button>
+							</Panel>
+						</Collapse>
 					</div>
 
 					{/* Results panel - 4/5 of the screen */}
 					<div className="w-4/5 bg-slate-100 p-4">
-						{isLoading ? ( // Show loading spinner if loading
+						{isLoading ? (
 							<div className="flex justify-center items-center h-full">
 								<Spin size="large" />
 							</div>

@@ -1,41 +1,60 @@
+// src/App.js
 import React, { useState } from 'react';
+import Canvas from '../components/Canvas';
 import axios from 'axios';
 
-const ObjectDetection = () => {
-    const [image, setImage] = useState(null);
+const Position = () => {
     const [boxes, setBoxes] = useState([]);
+    const [filteredImages, setFilteredImages] = useState([]);
 
-    const handleFileChange = (e) => {
-        setImage(e.target.files[0]);
-    };
+    const handleBoxDrawn = async (box) => {
+        setBoxes([...boxes, box]);
 
-    const handleDetect = async () => {
-        const formData = new FormData();
-        formData.append('file', image);
-
-        const response = await axios.post('/api/detect/', formData);
-        setBoxes(response.data.boxes);
+        // Call the API to filter images based on bounding boxes
+        try {
+            const response = await axios.get('http:localhost:8000/api/search', {
+                params: {
+                    search_query: '', // Add search query if needed
+                    obj_filters: [
+                        `bbox_x=${Math.round(box.x)}`,
+                        `bbox_y=${Math.round(box.y)}`,
+                        `bbox_width=${Math.round(box.width)}`,
+                        `bbox_height=${Math.round(box.height)}`
+                    ],
+                },
+            });
+            setFilteredImages(response.data);
+        } catch (error) {
+            console.error('Error fetching filtered images:', error);
+        }
     };
 
     return (
         <div>
-            <input type="file" onChange={handleFileChange} />
-            <button onClick={handleDetect}>Detect</button>
+            <h1>Bounding Box Annotation</h1>
+            <Canvas width={800} height={600} onBoxDrawn={handleBoxDrawn} />
             <div>
-                {/* Render the image and overlay boxes */}
-                {boxes.map((box, index) => (
-                    <div key={index} className="bounding-box" style={{
-                        position: 'absolute',
-                        top: box[1][1],
-                        left: box[1][0],
-                        width: box[1][2] - box[1][0],
-                        height: box[1][3] - box[1][1],
-                        border: '2px solid red'
-                    }}></div>
-                ))}
+                <h2>Bounding Boxes</h2>
+                <ul>
+                    {boxes.map((box, index) => (
+                        <li key={index}>
+                            Box {index + 1}: x={box.x}, y={box.y}, width={box.width}, height={box.height}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+            <div>
+                <h2>Filtered Images</h2>
+                <ul>
+                    {filteredImages.map((image, index) => (
+                        <li key={index}>
+                            <img src={`/images/${image.file}`} alt={`Image ${index + 1}`} style={{ maxWidth: '200px' }} />
+                            <p>{image.file}</p>
+                        </li>
+                    ))}
+                </ul>
             </div>
         </div>
     );
 };
-
-export default ObjectDetection;
+export default Position;

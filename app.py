@@ -5,7 +5,6 @@ import numpy as np
 import faiss
 import torch
 from sentence_transformers import SentenceTransformer
-import pytesseract
 from io import BytesIO
 
 class App:
@@ -24,8 +23,9 @@ class App:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        self.model = SentenceTransformer('clip-ViT-B-32')
-        self.index = faiss.read_index("static/index.faiss")
+        self.model = SentenceTransformer('clip-ViT-L-14')
+        # Update new index 
+        self.index = faiss.read_index("static/index_vit_l_14.faiss")
         
         with open("static/image_paths.json") as f:
             self.image_paths = json.load(f)
@@ -47,7 +47,7 @@ class App:
             if ocr_filter:
                 ocr_match_score = self._ocr_match_score(ocr_text, ocr_filter)
                 if ocr_match_score > 0:  # Only include results that match OCR filter
-                    similarity = similarity * 0.6 + ocr_match_score * 0.4
+                    similarity = similarity * 0.2 + ocr_match_score * 0.8
                 else:
                     continue  
             

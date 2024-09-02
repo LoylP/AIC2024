@@ -2,11 +2,14 @@ import os
 from glob import glob
 import cv2
 import easyocr
-import json
 import re
+from elasticsearch import Elasticsearch
 
 # Initialize the reader once
 reader = easyocr.Reader(['vi', 'en'], gpu=True, recog_network='standard')
+
+# Initialize Elasticsearch client
+es = Elasticsearch(["http://localhost:9200"])  # Adjust the URL if needed
 
 def preprocess_image(image_path):
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -42,30 +45,46 @@ def process_ocr_result(ocr_results: list) -> str:
 def process_images_ocr(image_path):
     image_files = []
     ocr_texts = {}
-    # max_images = 50  # Chạy thử với 50 ảnh
+    max_images = 100  # Chạy thử với 50 ảnh
     for folder in os.listdir(image_path):
         folder_path = os.path.join(image_path, folder)
         if os.path.isdir(folder_path):
             image_files.extend(glob(os.path.join(folder_path, "*.jpg")))
-            # if len(image_files) >= max_images:              # Chỉ thử với 50 ảnh
-            #     image_files = image_files[:max_images]      #
-            #     break                                       #
+            if len(image_files) >= max_images:              # Chỉ thử với 50 ảnh
+                image_files = image_files[:max_images]      #
+                break                                       #
 
     batch_size = 10  # Adjust based on your GPU memory
     for i in range(0, len(image_files), batch_size):
         batch = image_files[i:i+batch_size]
         print(f"Processing OCR for images {i+1}-{min(i+batch_size, len(image_files))}/{len(image_files)}")
-        ocr_results = perform_ocr(batch)
-        for j, image_file in enumerate(batch):
-            filtered_text = process_ocr_result(ocr_results[j])
-            print("filtered_text: ", filtered_text)
-            ocr_texts[os.path.relpath(image_file, image_path)] = filtered_text
+        
+        # Check which images are already processed
+        to_process = []
+        for image_file in batch:
+            relative_path = os.path.relpath(image_file, image_path)
+            if not es.exists(index="ocr_results", id=relative_path):
+                to_process.append(image_file)
+        
+        if to_process:
+            ocr_results = perform_ocr(to_process)
+            for j, image_file in enumerate(to_process):
+                filtered_text = process_ocr_result(ocr_results[j])
+                print("filtered_text: ", filtered_text)
+                
+                relative_path = os.path.relpath(image_file, image_path)
+                # Prepare document for Elasticsearch
+                doc = {
+                    'path': relative_path,
+                    'text': filtered_text
+                }
+                
+                # Index document in Elasticsearch using the relative path as the document ID
+                es.index(index="ocr_results", id=relative_path, body=doc)
+        else:
+            print(f"Skipping batch {i+1}-{min(i+batch_size, len(image_files))} as all images are already processed")
 
-    # Save OCR results
-    with open(os.path.abspath("static/ocr_texts.json"), "w") as f:
-        json.dump(ocr_texts, f)
-
-    print(f"OCR texts extracted: {len(ocr_texts)}")
+    print(f"OCR texts extracted and indexed: {len(image_files)}")
 
 if __name__ == "__main__":
     image_path = "/home/nguyenhoangphuc-22521129/AIC2024/static/HCMAI22_MiniBatch1/Keyframes"

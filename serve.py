@@ -35,7 +35,7 @@ async def read_root():
 
 @app.get("/api/search")
 async def search(
-    search_query: str = Query(..., description="Main search query"),
+    search_query: str = Query(None, description="Main search query"),
     ocr_filter: str = Query(None, description="Optional OCR filter text"),
     results: int = Query(100, description="Number of results to return")
 ):

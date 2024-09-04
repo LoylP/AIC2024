@@ -51,6 +51,14 @@ async def get_all_objects():
     return unique_classes
 
 
+@app.get("/api/milvus/search")
+async def milvus_search(
+    search_query: Optional[str] = None,
+):
+    search_results = query(search_query)
+    return JSONResponse(content=search_results)
+
+
 @app.get("/api/search")
 async def search(
     search_query: Optional[str] = None,

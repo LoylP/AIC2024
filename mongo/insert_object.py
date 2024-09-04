@@ -2,64 +2,78 @@ import os
 import json
 from collections import Counter
 from pymongo import MongoClient
+from tqdm import tqdm
 
+# MongoDB connection
 uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 client = MongoClient(uri)
 
 db = client['obj-detection']
 collection = db['object-detection-results']
 
-json_directory = r"F:\\AI Challenge\\AIC2024\\AIC2024\\static\\HCMAI22_MiniBatch1\\Objects"
+json_directory = "./object_detection_results/"
 
 
 def process_directory(directory):
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if file.endswith('.json'):
-                file_path = os.path.join(root, file)
+    total_files = sum([len(files) for r, d, files in os.walk(
+        directory) if any(f.endswith('.json') for f in files)])
 
-                with open(file_path, 'r') as json_file:
-                    data = json.load(json_file)
+    with tqdm(total=total_files, desc="Processing Files", unit="file") as pbar:
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if file.endswith('.json'):
+                    file_path = os.path.join(root, file)
 
-                # Extracting data
-                class_entities = data.get('detection_class_entities', [])
-                class_labels = data.get('detection_class_labels', [])
-                scores = data.get('detection_scores', [])
-                boxes = data.get('detection_boxes', [])
+                    with open(file_path, 'r') as json_file:
+                        data = json.load(json_file)  # Load the JSON data
 
-                # Filter by score >= 0.5
-                filtered_entities = []
-                filtered_scores = []
-                filtered_boxes = []
+                    # Check if data is a string and parse it as JSON
+                    if isinstance(data, str):
+                        try:
+                            data = json.loads(data)
+                        except json.JSONDecodeError:
+                            print(
+                                f"Error: Could not parse the JSON string in file {file_path}")
+                            continue
 
-                for i, score in enumerate(scores):
-                    score_value = float(score)
-                    if score_value >= 0.3:
-                        filtered_entities.append(class_entities[i])
-                        filtered_scores.append(score_value)
-                        filtered_boxes.append(boxes[i])
+                    if isinstance(data, list):
+                        filtered_entities = []
+                        filtered_scores = []
+                        filtered_boxes = []
 
-                # Count occurrences of each class entity
-                entity_counts = Counter(filtered_entities)
+                        for detection in data:
+                            if isinstance(detection, dict):
+                                score_value = detection.get('confidence', 0)
+                                if score_value >= 0.5:
+                                    filtered_entities.append(
+                                        detection.get('name'))
+                                    filtered_scores.append(score_value)
+                                    filtered_boxes.append(detection.get('box'))
+                            else:
+                                print(
+                                    f"Warning: Expected a dictionary but got {type(detection)} in file {file_path}")
 
-                # Prepare document for MongoDB insertion
-                folder_name = os.path.basename(root)  # Get folder name
-                # Remove the .json extension
-                file_name = os.path.splitext(file)[0]
-                full_file_path = f"{folder_name}/{file_name}"
+                        entity_counts = Counter(filtered_entities)
 
-                document = {
-                    'Video_id': folder_name,  # Folder name
-                    'frame': file_name,  # File name without extension
-                    'path': full_file_path,  # Folder name + File name without extension
-                    # Count of each entity
-                    'detection_class_entities': dict(entity_counts),
-                    'detection_scores': filtered_scores,
-                    'detection_boxes': filtered_boxes
-                }
+                        folder_name = os.path.basename(root)
+                        file_name = os.path.splitext(file)[0]
+                        full_file_path = f"{folder_name}/{file_name}"
 
-                # Insert into MongoDB
-                collection.insert_one(document)
+                        document = {
+                            'VideoId': folder_name,
+                            'frame': file_name,
+                            'path': full_file_path,
+                            'class_count': dict(entity_counts),
+                            'scores': filtered_scores,
+                            'boxes': filtered_boxes
+                        }
+
+                        collection.insert_one(document)
+                    else:
+                        print(
+                            f"Error: Expected a list but got {type(data)} in file {file_path}")
+
+                    pbar.update(1)
 
 
 # Start processing from the base directory

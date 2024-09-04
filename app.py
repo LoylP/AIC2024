@@ -5,45 +5,48 @@ import numpy as np
 import faiss
 import torch
 from sentence_transformers import SentenceTransformer
-import pytesseract
 from io import BytesIO
+from elasticsearch import Elasticsearch
 
 
 class App:
     def __init__(self):
         static_dir = os.path.abspath("static")
-        ocr_file = os.path.join(static_dir, "ocr_texts.json")
 
         if not os.path.exists(static_dir):
             raise FileNotFoundError(
                 f"The 'static' directory does not exist: {static_dir}")
 
-        if not os.path.exists(ocr_file):
-            raise FileNotFoundError(
-                f"The OCR texts file does not exist: {ocr_file}")
-
-        with open(ocr_file) as f:
-            self.ocr_texts = json.load(f)
-
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.model = SentenceTransformer('clip-ViT-B-32')
-        self.index = faiss.read_index("static/index.faiss")
+        self.model = SentenceTransformer('clip-ViT-L-14')
+        self.index = faiss.read_index("static/index_vit_l_14.faiss")
 
         with open("static/image_paths.json") as f:
             self.image_paths = json.load(f)
 
-    def search(self, search_text, ocr_filter=None, results=100):
+        # Initialize Elasticsearch client
+        # Adjust URL if needed
+        self.es = Elasticsearch(["http://localhost:9200"])
+
+    def search(self, search_text=None, ocr_filter=None, results=100):
+        if not search_text and ocr_filter:
+            return self.search_by_ocr(ocr_filter, results)
+
         text_features = self.model.encode([search_text])
         text_features = text_features.astype('float32')
 
         D, I = self.index.search(text_features, len(self.image_paths))
         search_results = []
 
+        # Batch fetch OCR texts from Elasticsearch
+        ocr_texts = self._batch_fetch_ocr_texts(
+            [self.image_paths[int(i)] for i in I[0]])
+
         for i in range(len(I[0])):
             idx = int(I[0][i])
             image_path = self.image_paths[idx]
-            ocr_text = self.ocr_texts.get(image_path, "")
+            ocr_text = ocr_texts.get(image_path, "")
 
             similarity = float(D[0][i])
 
@@ -64,6 +67,39 @@ class App:
         search_results.sort(key=lambda x: x['similarity'], reverse=True)
         return search_results[:results]
 
+    def search_by_ocr(self, ocr_filter, results=100):
+        search_results = []
+
+        # Batch fetch OCR texts from Elasticsearch
+        ocr_texts = self._batch_fetch_ocr_texts(self.image_paths)
+
+        for image_path in self.image_paths:
+            ocr_text = ocr_texts.get(image_path, "")
+
+            ocr_match_score = self._ocr_match_score(ocr_text, ocr_filter)
+            if ocr_match_score > 0:
+                result = {
+                    'path': image_path,
+                    'similarity': ocr_match_score,
+                    'ocr_text': ocr_text
+                }
+                search_results.append(result)
+
+        search_results.sort(key=lambda x: x['similarity'], reverse=True)
+        return search_results[:results]
+
+    def _batch_fetch_ocr_texts(self, image_paths):
+        ocr_texts = {}
+        # Use mget to fetch multiple documents at once
+        body = {"ids": image_paths}
+        es_results = self.es.mget(index="ocr_results", body=body)
+        for doc in es_results['docs']:
+            if doc['found']:
+                ocr_texts[doc['_id']] = doc['_source']['text']
+            else:
+                ocr_texts[doc['_id']] = ""
+        return ocr_texts
+
     def _ocr_match_score(self, ocr_text, ocr_filter):
         ocr_words = set(ocr_text.lower().split())
         filter_words = set(ocr_filter.lower().split())
@@ -80,10 +116,14 @@ class App:
         D, I = self.index.search(image_features, len(self.image_paths))
         search_results = []
 
+        # Batch fetch OCR texts from Elasticsearch
+        ocr_texts = self._batch_fetch_ocr_texts(
+            [self.image_paths[int(i)] for i in I[0]])
+
         for i in range(len(I[0])):
             idx = int(I[0][i])
             image_path = self.image_paths[idx]
-            ocr_text = self.ocr_texts.get(image_path, "")
+            ocr_text = ocr_texts.get(image_path, "")
 
             similarity = float(D[0][i])
 

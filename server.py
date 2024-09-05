@@ -1,3 +1,5 @@
+from fastapi.responses import JSONResponse
+from bson import ObjectId
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -51,12 +53,95 @@ async def get_all_objects():
     return unique_classes
 
 
+def serialize_document(document):
+    """Convert MongoDB documents to JSON-serializable format."""
+    if isinstance(document, ObjectId):
+        return str(document)
+    if isinstance(document, dict):
+        return {key: serialize_document(value) for key, value in document.items()}
+    if isinstance(document, list):
+        return [serialize_document(item) for item in document]
+    return document
+
+
 @app.get("/api/milvus/search")
 async def milvus_search(
     search_query: Optional[str] = None,
+    obj_filters: Optional[List[str]] = Query(None),
+    obj_position_filters: Optional[str] = None
 ):
     search_results = query(search_query)
-    return JSONResponse(content=search_results)
+
+    if not obj_filters and not obj_position_filters:
+        return JSONResponse(content=search_results)
+
+    file_paths = []
+    for image_info in search_results:
+        if isinstance(image_info, dict) and 'VideosId' in image_info and 'frame' in image_info:
+            milvus_videos_id = image_info['VideosId']
+            video_id_parts = milvus_videos_id.split('/')
+            mongo_video_id = video_id_parts[-1]  # Extracts "L02_V019"
+            frame = image_info['frame']
+
+            # Store VideoId and frame for MongoDB query
+            file_paths.append({"VideoId": mongo_video_id, "frame": frame})
+
+        else:
+            print("Missing or invalid 'VideosId' or 'frame' in result.")
+
+    # Check if file paths were extracted
+    if not file_paths:
+        return JSONResponse(content={"error": "No valid file paths found in Milvus results."}, status_code=400)
+
+    # Construct MongoDB query using VideoId and frame
+    mongo_query = {
+        "$or": [
+            {"VideoId": file_path["VideoId"], "frame": file_path["frame"]}
+            for file_path in file_paths
+        ]
+    }
+
+    # Add object filters to MongoDB query if provided
+    if obj_filters:
+        for obj_filter in obj_filters:
+            key_value_pairs = obj_filter.split(',')
+            for key_value in key_value_pairs:
+                filter_key, filter_value = key_value.split('=')
+                filter_value = int(filter_value)
+                mongo_query[f"class_count.{filter_key}"] = filter_value
+
+    # Query MongoDB for object detection results based on constructed query
+    object_detection_results = list(collection.find(mongo_query))
+    filtered_results = []
+    if obj_position_filters:
+        position_query = {}
+        for key_value in obj_position_filters.split(','):
+            key, value = key_value.split('=')
+            if key in ['x1', 'y1', 'x2', 'y2']:
+                position_query[key] = {"$gte": float(value)} if '1' in key else {
+                    "$lte": float(value)}
+
+        # Apply bounding box filters
+        for result in object_detection_results:
+            boxes = result.get('boxes', [])
+            for box in boxes:
+                x1, y1, x2, y2 = map(float, box)
+                if (
+                    ('x1' not in position_query or x1 >= position_query.get('x1', {}).get('$gte', 0)) and
+                    ('y1' not in position_query or y1 >= position_query.get('y1', {}).get('$gte', 0)) and
+                    ('x2' not in position_query or x2 <= position_query.get('x2', {}).get('$lte', 1)) and
+                    ('y2' not in position_query or y2 <=
+                     position_query.get('y2', {}).get('$lte', 1))
+                ):
+                    filtered_results.append(result)
+                    break
+    else:
+        filtered_results = object_detection_results
+
+    # Serialize results to handle ObjectId and other non-serializable fields
+    serialized_results = serialize_document(filtered_results)
+
+    return JSONResponse(content=serialized_results)
 
 
 @app.get("/api/search")

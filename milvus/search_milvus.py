@@ -6,9 +6,9 @@ from PIL import Image
 import numpy as np
 from pymilvus import connections, Collection
 import time
-from dotenv import load_dotenv
 from open_clip import tokenizer
-from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+
 load_dotenv()
 
 uri = os.getenv('MILVUS_URI')
@@ -41,8 +41,7 @@ def encode_text(text):
 
 
 def query(query_text):
-    # Measure the start time
-    start_time = time.time()
+    # Encode the query text
     query_embedding = encode_text(query_text)
     print(f"Query embedding shape: {len(query_embedding)}")  # Debugging line
 
@@ -54,24 +53,24 @@ def query(query_text):
         }
     }
 
+    # Perform the search
     search_results = collection.search(
         [query_embedding],
         "embedding",
         search_params,
         limit=100,
-        output_fields=["id", "VideosId", "frame", "file_path"]
+        output_fields=["VideosId", "frame", "file_path"]
     )
-
-    # Directly return results
-    return [
+    # store the search results
+    results = [
         {
-            "id": hit.entity.get("id"),
-            "VideosId": hit.entity.get("VideosId"),
-            "frame": hit.entity.get("frame"),
-            "file_path": hit.entity.get("file_path")
+            "VideosId": hit.entity.get('VideosId'),
+            "frame": hit.entity.get('frame'),
+            "file_path": hit.entity.get('file_path')
         }
         for result in search_results for hit in result
-    ], time.time() - start_time
+    ]
+    return results
 
 
 def get_all_data():

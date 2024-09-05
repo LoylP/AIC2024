@@ -6,7 +6,18 @@ from pydantic import BaseModel
 import os
 from app import App
 import json
-from milvus import search_milvus
+from milvus import search_milvus as milvus_search
+from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import ConnectionError as ESConnectionError
+from typing import List, Optional
+from pymongo import MongoClient
+import math
+import aiohttp
+from googletrans import Translator
+import asyncio
+
+# Add this line
+translator = Translator()
 
 app = FastAPI()
 
@@ -19,9 +30,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-path_midas = "/home/nguyenhoangphuc-22521129/AIC2024/static/HCMAI22_MiniBatch1/Keyframes"
+path_midas = "/home/nguyenhoangphuc-22521129/AIC2024/static/keyframes_preprocess"
 app.mount("/images", StaticFiles(directory=path_midas), name="images")
 
+es = Elasticsearch(["http://localhost:9200"])
+
+# MongoDB connection
+uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+client = MongoClient(uri)
+db = client['obj-detection']
+collection = db['object-detection-results']
 
 class ImageData(BaseModel):
     id: int
@@ -30,50 +48,119 @@ class ImageData(BaseModel):
     path: str
     similarity: float
     ocr_text: str
-
+    text: str
 
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the Image Search API!"}
 
+@app.get("/api/get-all-objects")
+async def get_all_objects():
+    # Load unique_classes.json file from static folder
+    with open('static/unique_classes.json') as f:
+        unique_classes = json.load(f)
+    return unique_classes
 
 @app.get("/api/milvus/search")
-async def search_milvus(
-    search_query: str = Query(None, description="Main search query"),
-    ocr_filter: str = Query(None, description="Optional OCR filter text"),
+async def search_milvus_endpoint(
+    search_query: Optional[str] = Query(None, description="Main search query"),
+    ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
+    obj_filters: Optional[List[str]] = Query(None),
+    obj_position_filters: Optional[str] = None
 ):
-    search_results = search_milvus.query(search_query)
-    return JSONResponse(content=search_results)
+    try:
+        # Translate only the search query to English
+        if search_query:
+            translated_query = await translate_to_english(search_query)
+            # print(f"Original query: {search_query}")
+            # print(f"Translated query: {translated_query}")
+        else:
+            translated_query = None
 
+        # Perform Milvus search with translated query
+        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter)
+        
+        # Apply object filters if provided
+        if obj_filters or obj_position_filters:
+            filtered_results = filter_results_by_objects(milvus_results, obj_filters, obj_position_filters)
+        else:
+            filtered_results = milvus_results
+        
+        # Ensure all float values are JSON-compliant
+        for result in filtered_results:
+            for key, value in result.items():
+                if isinstance(value, float):
+                    if math.isnan(value) or math.isinf(value):
+                        result[key] = None  # or use a default value like 0
+        
+        return JSONResponse(content={
+            "results": filtered_results, 
+            "search_time": search_time,
+            "original_query": search_query,
+            "translated_query": translated_query
+        })
+    except ESConnectionError:
+        raise HTTPException(status_code=503, detail="Elasticsearch service is unavailable")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-@app.get("/api/search")
-async def search(
-    search_query: str = Query(None, description="Main search query"),
-    ocr_filter: str = Query(None, description="Optional OCR filter text"),
-    results: int = Query(100, description="Number of results to return")
-):
-    app_instance = App()
-    search_results = app_instance.search(
-        search_query, ocr_filter=ocr_filter, results=results)
+def filter_results_by_objects(results, obj_filters, obj_position_filters):
+    file_paths = [result['file_path'] for result in results]
 
-    if not isinstance(search_results, list):
-        raise HTTPException(status_code=400, detail="Invalid search results")
+    mongo_query = {
+        "path": {"$in": file_paths}
+    }
 
-    image_data_list = []
-    for idx, result in enumerate(search_results):
-        frame, file = os.path.split(result['path'])
-        image_data = ImageData(
-            id=idx + 1,
-            frame=frame,
-            file=file,
-            path=result['path'],
-            similarity=result['similarity'],
-            ocr_text=result['ocr_text']
-        )
-        image_data_list.append(image_data.dict())
+    # Process object filters if provided
+    if obj_filters:
+        for obj_filter in obj_filters:
+            for key_value in obj_filter.split(','):
+                filter_key, filter_value = key_value.split('=')
+                filter_value = int(filter_value)
+                mongo_query[f"detection_class_entities.{filter_key}"] = filter_value
 
-    return JSONResponse(content=image_data_list)
+    # Process position filters if provided
+    if obj_position_filters:
+        position_query = {}
+        for pos_filter in obj_position_filters.split(','):
+            filter_key, filter_value = pos_filter.split('=')
+            filter_value = float(filter_value)
+            if filter_key in ['xmin', 'ymin', 'xmax', 'ymax']:
+                position_query[filter_key] = {"$gte": filter_value}
 
+        if position_query:
+            mongo_query['detection_boxes'] = {
+                "$elemMatch": position_query
+            }
+
+    object_detection_results = list(collection.find(mongo_query))
+
+    # Further filter results based on bounding box positions
+    filtered_results = []
+    if obj_position_filters:
+        for result in object_detection_results:
+            boxes = result.get('detection_boxes', [])
+            if boxes:
+                for box in boxes:
+                    xmin, ymin, xmax, ymax = map(float, box)
+                    if (
+                        ('xmin' not in position_query or xmin >= position_query.get('xmin', {}).get('$gte', 0)) and
+                        ('ymin' not in position_query or ymin >= position_query.get('ymin', {}).get('$gte', 0)) and
+                        ('xmax' not in position_query or xmax <= position_query.get('xmax', {}).get('$lte', 1)) and
+                        ('ymax' not in position_query or ymax <= position_query.get('ymax', {}).get('$lte', 1))
+                    ):
+                        filtered_results.append(result)
+                        break
+    else:
+        filtered_results = object_detection_results
+
+    # Match filtered results with original results
+    final_results = [
+        result for result in results
+        if any(filtered_result['path'] == result['file_path'] for filtered_result in filtered_results)
+    ]
+
+    return final_results
 
 @app.get("/images/{filename}")
 async def serve_image(filename: str):
@@ -81,37 +168,6 @@ async def serve_image(filename: str):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
-
-
-@app.post("/api/search_by_image")
-async def search_by_image(
-    image: UploadFile = File(...),
-    ocr_filter: str = Query(None, description="Optional OCR filter text"),
-    results: int = Query(100, description="Number of results to return")
-):
-    app_instance = App()
-
-    image_content = await image.read()
-    search_results = app_instance.search_by_image(
-        image_content, ocr_filter=ocr_filter, results=results)
-    if not isinstance(search_results, list):
-        raise HTTPException(status_code=400, detail="Invalid search results")
-
-    image_data_list = []
-    for idx, result in enumerate(search_results):
-        frame, file = os.path.split(result['path'])
-        image_data = ImageData(
-            id=idx + 1,
-            frame=frame,
-            file=file,
-            path=result['path'],
-            similarity=result['similarity'],
-            ocr_text=result['ocr_text']
-        )
-        image_data_list.append(image_data.dict())
-
-    return JSONResponse(content=image_data_list)
-
 
 @app.get("/api/search_similar")
 async def search_similar(
@@ -145,6 +201,56 @@ async def search_similar(
 
     return JSONResponse(content=image_data_list)
 
+@app.post("/api/milvus/search_by_image")
+async def search_milvus_by_image(
+    image_url: str = Query(..., description="URL of the image to search"),
+    ocr_filter: str = Query(None, description="Optional OCR filter text"),
+    results: int = Query(100, description="Number of results to return"),
+    obj_filters: Optional[List[str]] = Query(None)
+):
+    try:
+        # Fetch image content from the provided URL
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as response:
+                image_content = await response.read()
+
+        search_results, search_time = milvus_search.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
+        
+        # Apply object filters if provided
+        if obj_filters:
+            filtered_results = filter_results_by_objects(search_results, obj_filters, None)
+        else:
+            filtered_results = search_results
+        
+        # Process the results to ensure JSON compliance
+        processed_results = []
+        for result in filtered_results:
+            processed_result = {}
+            for key, value in result.items():
+                if isinstance(value, float):
+                    if math.isnan(value) or math.isinf(value):
+                        processed_result[key] = None
+                    else:
+                        processed_result[key] = value
+                else:
+                    processed_result[key] = value
+            processed_results.append(processed_result)
+        
+        return JSONResponse(content={"results": processed_results, "search_time": search_time})
+    except ESConnectionError:
+        raise HTTPException(status_code=503, detail="Elasticsearch service is unavailable")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+async def translate_to_english(text):
+    try:
+        loop = asyncio.get_event_loop()
+        translation = await loop.run_in_executor(None, translator.translate, text, 'en', 'auto')
+        return translation.text
+    except Exception as e:
+        print(f"Translation error: {str(e)}")
+        return text  # Return original text if translation fails

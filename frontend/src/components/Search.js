@@ -56,33 +56,55 @@ const Search = () => {
 				.join(",");
 
 			if (inputType === "text") {
-				const url = new URL("http://127.0.0.1:8000/api/search");
-				url.searchParams.append("search_query", searchValue);
-				url.searchParams.append("ocr_filter", ocrDescription);
+				const url = new URL("http://127.0.0.1:8000/api/milvus/search");
+				if (searchValue) {
+					url.searchParams.append("search_query", searchValue);
+				}
+				if (ocrDescription) {
+					url.searchParams.append("ocr_filter", ocrDescription);
+				}
 				if (objFiltersString) {
 					url.searchParams.append("obj_filters", objFiltersString);
 				}
-				url.searchParams.append("results", "100");
 
-				response = await fetch(url);
+				// Perform search even if only OCR filter is provided
+				if (searchValue || ocrDescription || objFiltersString) {
+					response = await fetch(url);
+				} else {
+					throw new Error("Please provide at least one search criteria");
+				}
 			} else if (inputType === "file" && selectedFile) {
 				const formData = new FormData();
 				formData.append("image", selectedFile);
 
-				const url = new URL("http://127.0.0.1:8000/api/search_by_image");
-				url.searchParams.append("ocr_filter", ocrDescription);
+				const url = new URL("http://127.0.0.1:8000/api/milvus/search_by_image");
+				if (ocrDescription) {
+					url.searchParams.append("ocr_filter", ocrDescription);
+				}
+				url.searchParams.append("results", "100");
 				if (objFiltersString) {
 					url.searchParams.append("obj_filters", objFiltersString);
 				}
-				url.searchParams.append("results", "100");
 
 				response = await fetch(url, {
 					method: "POST",
 					body: formData,
 				});
+			} else {
+				throw new Error("Please provide an image file or search query");
 			}
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
 			const data = await response.json();
-			setResults(Array.isArray(data) ? data : []);
+			if (data.results && Array.isArray(data.results)) {
+				setResults(data.results);
+			} else {
+				console.error("Unexpected data structure:", data);
+				setResults([]);
+			}
 			setCurrentPage(1);
 		} catch (error) {
 			console.error("Error during search:", error);
@@ -117,19 +139,40 @@ const Search = () => {
 		if (selectedImage) {
 			setIsLoading(true);
 			try {
-				const url = new URL("http://127.0.0.1:8000/api/search_similar");
-				url.searchParams.append("image_path", selectedImage.path);
+				const imageUrl = `http://127.0.0.1:8000/images/${selectedImage.file_path}`;
+				
+				// Construct the obj_filters parameter
+				const objFiltersString = objectFilters
+					.filter((filter) => filter.class && filter.value)
+					.map((filter) => `${filter.class}=${filter.value}`)
+					.join(",");
+
+				const url = new URL("http://127.0.0.1:8000/api/milvus/search_by_image");
+				url.searchParams.append("image_url", imageUrl);
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
 				}
 				url.searchParams.append("results", "100");
-
-				const response = await fetch(url);
-				if (!response.ok) {
-					throw new Error("Network response was not ok");
+				if (objFiltersString) {
+					url.searchParams.append("obj_filters", objFiltersString);
 				}
-				const data = await response.json();
-				setResults(data);
+
+				const searchResponse = await fetch(url, {
+					method: "POST",
+				});
+
+				if (!searchResponse.ok) {
+					throw new Error(`HTTP error! status: ${searchResponse.status}`);
+				}
+
+				const data = await searchResponse.json();
+				if (data.results && Array.isArray(data.results)) {
+					setResults(data.results);
+				} else {
+					console.error("Unexpected data structure:", data);
+					setResults([]);
+				}
+
 				setCurrentPage(1);
 				setShowModal(false);
 			} catch (error) {
@@ -232,7 +275,7 @@ const Search = () => {
 						)}
 						<button
 							onClick={handleButtonSearch}
-							disabled={inputType === "text" ? !searchValue : !selectedFile}
+							disabled={inputType === "text" ? (!searchValue && !ocrDescription && objectFilters.every(f => !f.class && !f.value)) : !selectedFile}
 							className="text-search-btn">
 							Search
 						</button>
@@ -316,7 +359,7 @@ const Search = () => {
 												onClick={() => handleImageClick(image)}>
 												<img
 													className="w-full h-40 object-cover rounded shadow-md"
-													src={`http://127.0.0.1:8000/images/${image.path}`}
+													src={`http://127.0.0.1:8000/images/${image.file_path}`}
 													alt={image.file}
 												/>
 												<div className="absolute inset-0 flex flex-col justify-end p-2">
@@ -346,15 +389,15 @@ const Search = () => {
 							</button>
 						</div>
 						<img
-							src={`http://127.0.0.1:8000/images/${selectedImage.path}`}
-							alt={selectedImage.file}
+							src={`http://127.0.0.1:8000/images/${selectedImage.file_path}`}
+							alt={selectedImage.file_path}
 							className="w-full mb-4 rounded"
 						/>
 						<p className="mb-2 text-black">
 							<strong>Frame:</strong> {selectedImage.frame}
 						</p>
 						<p className="mb-2 text-black">
-							<strong>File:</strong> {selectedImage.file}
+							<strong>File:</strong> {selectedImage.file_path}
 						</p>
 						<p className="mb-2 text-black">
 							<strong>OCR Text:</strong> {selectedImage.ocr_text}

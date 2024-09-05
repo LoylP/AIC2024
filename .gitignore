@@ -4,5 +4,4 @@ __pycache__/
 .env.*
 
 ./frontend/node_modules/
-static/HCMAI22_MiniBatch1
 static/keyframes_preprocess

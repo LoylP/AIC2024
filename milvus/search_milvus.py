@@ -80,7 +80,7 @@ def query(query_text=None, ocr_filter=None):
                 ocr_text = get_ocr_text(file_path)
                 results.append({
                     "id": hit.entity.get("id"),
-                    "VideosId": hit.entity.get("VideosId"),
+                    "VideosId": hit.entity.get("VideosId").split("/")[-1] if hit.entity.get("VideosId") else None,
                     "frame": hit.entity.get("frame"),
                     "file_path": file_path,
                     "similarity": hit.distance,
@@ -217,7 +217,7 @@ def search_by_image(image_content, ocr_filter=None, results=100):
             
             processed_results.append({
                 "id": hit.entity.get("id"),
-                "VideosId": hit.entity.get("VideosId"),
+                "VideosId": hit.entity.get("VideosId").split("/")[-1] if hit.entity.get("VideosId") else None,
                 "frame": hit.entity.get("frame"),
                 "file_path": hit.entity.get("file_path"),
                 "similarity": similarity,

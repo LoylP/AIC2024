@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import os
 from app import App
 import json
+from milvus import search_milvus
 
 app = FastAPI()
 
@@ -21,6 +22,7 @@ app.add_middleware(
 path_midas = "/home/nguyenhoangphuc-22521129/AIC2024/static/HCMAI22_MiniBatch1/Keyframes"
 app.mount("/images", StaticFiles(directory=path_midas), name="images")
 
+
 class ImageData(BaseModel):
     id: int
     frame: str
@@ -29,9 +31,20 @@ class ImageData(BaseModel):
     similarity: float
     ocr_text: str
 
+
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the Image Search API!"}
+
+
+@app.get("/api/milvus/search")
+async def search_milvus(
+    search_query: str = Query(None, description="Main search query"),
+    ocr_filter: str = Query(None, description="Optional OCR filter text"),
+):
+    search_results = search_milvus.query(search_query)
+    return JSONResponse(content=search_results)
+
 
 @app.get("/api/search")
 async def search(
@@ -40,7 +53,8 @@ async def search(
     results: int = Query(100, description="Number of results to return")
 ):
     app_instance = App()
-    search_results = app_instance.search(search_query, ocr_filter=ocr_filter, results=results)
+    search_results = app_instance.search(
+        search_query, ocr_filter=ocr_filter, results=results)
 
     if not isinstance(search_results, list):
         raise HTTPException(status_code=400, detail="Invalid search results")
@@ -59,6 +73,7 @@ async def search(
         image_data_list.append(image_data.dict())
 
     return JSONResponse(content=image_data_list)
+
 
 @app.get("/images/{filename}")
 async def serve_image(filename: str):
@@ -67,6 +82,7 @@ async def serve_image(filename: str):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
 
+
 @app.post("/api/search_by_image")
 async def search_by_image(
     image: UploadFile = File(...),
@@ -74,9 +90,10 @@ async def search_by_image(
     results: int = Query(100, description="Number of results to return")
 ):
     app_instance = App()
-    
+
     image_content = await image.read()
-    search_results = app_instance.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
+    search_results = app_instance.search_by_image(
+        image_content, ocr_filter=ocr_filter, results=results)
     if not isinstance(search_results, list):
         raise HTTPException(status_code=400, detail="Invalid search results")
 
@@ -95,17 +112,20 @@ async def search_by_image(
 
     return JSONResponse(content=image_data_list)
 
+
 @app.get("/api/search_similar")
 async def search_similar(
-    image_path: str = Query(..., description="Path of the image to search similar"),
+    image_path: str = Query(...,
+                            description="Path of the image to search similar"),
     ocr_filter: str = Query(None, description="Optional OCR filter text"),
     results: int = Query(100, description="Number of results to return")
 ):
     app_instance = App()
-    
+
     with open(os.path.join(path_midas, image_path), "rb") as image_file:
         image_content = image_file.read()
-    search_results = app_instance.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
+    search_results = app_instance.search_by_image(
+        image_content, ocr_filter=ocr_filter, results=results)
 
     if not isinstance(search_results, list):
         raise HTTPException(status_code=400, detail="Invalid search results")

@@ -4,4 +4,5 @@ __pycache__/
 .env.*
 
 ./frontend/node_modules/
+static/HCM
 static/keyframes_preprocess

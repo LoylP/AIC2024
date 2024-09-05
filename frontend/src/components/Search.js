@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Spin, Collapse, Select, Input, Button } from "antd";
+import { Spin, Collapse, Select, Input, Button, message } from "antd";
 import logo from "../static/logo.png";
 import "./Search.css";
 import { PlusOutlined, MinusOutlined } from "@ant-design/icons";
@@ -221,6 +221,41 @@ const Search = () => {
 		};
 	}, []);
 
+	const handleExportCSV = async () => {
+		if (results.length === 0) {
+			message.error("No results to export");
+			return;
+		}
+
+		try {
+			const response = await fetch("http://127.0.0.1:8000/api/export-to-csv", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(results.slice(0, 100)),
+			});
+
+			if (response.ok) {
+				const blob = await response.blob();
+				const url = window.URL.createObjectURL(blob);
+				const a = document.createElement("a");
+				a.style.display = "none";
+				a.href = url;
+				a.download = "search_results.csv";
+				document.body.appendChild(a);
+				a.click();
+				window.URL.revokeObjectURL(url);
+				message.success("CSV file exported successfully");
+			} else {
+				throw new Error("Failed to export CSV");
+			}
+		} catch (error) {
+			console.error("Error exporting CSV:", error);
+			message.error("Failed to export CSV");
+		}
+	};
+
 	return (
 		<div>
 			<div className="flex flex-col h-screen">
@@ -335,20 +370,28 @@ const Search = () => {
 								<div>
 									<div className="flex justify-between items-center mb-4">
 										<h2 className="text-2xl font-bold text-black">Results: </h2>
-										<div className="flex">
-											{[...Array(totalPages)].map((_, index) => (
-												<button
-													key={index}
-													id="pagination-button"
-													onClick={() => handlePageClick(index + 1)}
-													className={`mx-1 px-3 py-1 rounded ${
-														currentPage === index + 1
-															? "bg-cyan-500 text-white"
-															: "bg-gray-200 text-black"
-													}`}>
-													{index + 1}
-												</button>
-											))}
+										<div className="flex items-center">
+											<Button
+												onClick={handleExportCSV}
+												className="mr-4 bg-green-500 text-white hover:bg-green-600"
+											>
+												Export to CSV
+											</Button>
+											<div className="flex">
+												{[...Array(totalPages)].map((_, index) => (
+													<button
+														key={index}
+														id="pagination-button"
+														onClick={() => handlePageClick(index + 1)}
+														className={`mx-1 px-3 py-1 rounded ${
+															currentPage === index + 1
+																? "bg-cyan-500 text-white"
+																: "bg-gray-200 text-black"
+														}`}>
+														{index + 1}
+													</button>
+												))}
+											</div>
 										</div>
 									</div>
 									<div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">

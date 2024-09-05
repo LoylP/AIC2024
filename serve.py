@@ -15,6 +15,9 @@ import math
 import aiohttp
 from googletrans import Translator
 import asyncio
+import csv
+from fastapi.responses import FileResponse
+import tempfile
 
 # Add this line
 translator = Translator()
@@ -241,6 +244,17 @@ async def search_milvus_by_image(
         raise HTTPException(status_code=503, detail="Elasticsearch service is unavailable")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+@app.post("/api/export-to-csv")
+async def export_to_csv(results: List[dict]):
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, newline='', suffix='.csv') as tmpfile:
+        writer = csv.writer(tmpfile)
+        for result in results:
+            videos_id = result.get('VideosId', '')
+            frame = result.get('frame', '')
+            writer.writerow([videos_id, frame])
+    
+    return FileResponse(tmpfile.name, media_type='text/csv', filename='query.csv')
 
 if __name__ == "__main__":
     import uvicorn

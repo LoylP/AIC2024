@@ -17,7 +17,6 @@ import aiohttp
 from googletrans import Translator
 import asyncio
 import csv
-from fastapi.responses import FileResponse
 import tempfile
 
 # Add this line
@@ -103,8 +102,8 @@ async def search_milvus_endpoint(
         # Translate only the search query to English
         if search_query:
             translated_query = await translate_to_english(search_query)
-            # print(f"Original query: {search_query}")
-            # print(f"Translated query: {translated_query}")
+            print(f"Original query: {search_query}")
+            print(f"Translated query: {translated_query}")
         else:
             translated_query = None
 
@@ -122,38 +121,7 @@ async def search_milvus_endpoint(
             for key, value in result.items():
                 if isinstance(value, float):
                     if math.isnan(value) or math.isinf(value):
-                        result[key] = None  # or use a default value like 0
-        
-        if ocr_filter:
-            # Perform OpenSearch search for OCR
-            es_query = {
-                "query": {
-                    "match": {
-                        "text": ocr_filter
-                    }
-                },
-                "size": 1000  # Adjust this number as needed
-            }
-            es_results = client.search(index="ocr", body=es_query)
-            
-            for hit in es_results['hits']['hits']:
-                file_path = hit['_source']['path']
-                ocr_text = hit['_source']['text']
-                
-                # Check if this file_path already exists in results
-                existing_result = next((item for item in filtered_results if item["file_path"] == file_path), None)
-                
-                if existing_result:
-                    # If it exists, update the OCR score
-                    existing_result["ocr_score"] = hit['_score']
-                else:
-                    # If it doesn't exist, add a new entry
-                    filtered_results.append({
-                        "file_path": file_path,
-                        "ocr_text": ocr_text,
-                        "ocr_score": hit['_score'],
-                        "similarity": float('inf')  # Set to infinity as we don't have a similarity score
-                    })
+                        result[key] = None
 
         return JSONResponse(content={
             "results": filtered_results, 

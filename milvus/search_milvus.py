@@ -92,7 +92,7 @@ def query(query_text=None, ocr_filter=None):
             "params": {"ef": 200}
         }
         
-        limit = 300  # Increase limit to get more potential matches
+        limit = 150 
         
         milvus_results = collection.search(
             [query_embedding],
@@ -104,15 +104,12 @@ def query(query_text=None, ocr_filter=None):
         
         for result in milvus_results:
             for hit in result:
-                file_path = hit.entity.get("file_path")
-                ocr_text = get_ocr_text(file_path)
                 results.append({
                     "id": hit.entity.get("id"),
                     "VideosId": hit.entity.get("VideosId").split("/")[-1] if hit.entity.get("VideosId") else None,
                     "frame": hit.entity.get("frame"),
-                    "file_path": file_path,
+                    "file_path": hit.entity.get("file_path"),
                     "similarity": hit.distance,
-                    "ocr_text": ocr_text
                 })
 
     if ocr_filter:
@@ -120,9 +117,10 @@ def query(query_text=None, ocr_filter=None):
         es_query = {
             "query": {
                 "match": {
-                    "path": ocr_filter
+                    "text": ocr_filter
                 }
-            }
+            },
+            "size": 150  # Adjust this number as needed
         }
         es_results = client.search(index="ocr", body=es_query)
         
@@ -134,8 +132,9 @@ def query(query_text=None, ocr_filter=None):
             existing_result = next((item for item in results if item["file_path"] == file_path), None)
             
             if existing_result:
-                # If it exists, update the OCR score
+                # If it exists, update the OCR score and text
                 existing_result["ocr_score"] = hit['_score']
+                existing_result["ocr_text"] = ocr_text
             else:
                 # If it doesn't exist, add a new entry
                 results.append({
@@ -145,31 +144,41 @@ def query(query_text=None, ocr_filter=None):
                     "similarity": float('inf')  # Set to infinity as we don't have a similarity score
                 })
 
-    # Calculate combined score
-    for result in results:
-        query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
-        ocr_score = result.get('ocr_score', 0)
-        
-        # Normalize OCR score (assuming max score is 1, adjust if needed)
-        normalized_ocr_score = ocr_score / 1 if ocr_score else 0
-        
-        # Calculate combined score (70% query, 30% OCR)
-        combined_score = 0.7 * query_score + 0.3 * normalized_ocr_score
-        
-        # Handle non-JSON compliant float values
-        if math.isnan(combined_score) or math.isinf(combined_score):
-            combined_score = 0
-        
-        result['combined_score'] = combined_score
+    # Calculate combined score only if both query_text and ocr_filter are provided
+    if query_text and ocr_filter:
+        for result in results:
+            query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
+            ocr_score = result.get('ocr_score', 0)
+            
+            # Normalize OCR score (assuming max score is 1, adjust if needed)
+            normalized_ocr_score = ocr_score / 1 if ocr_score else 0
+            
+            # Calculate combined score (70% query, 30% OCR)
+            combined_score = 0.7 * query_score + 0.3 * normalized_ocr_score
+            
+            # Handle non-JSON compliant float values
+            if math.isnan(combined_score) or math.isinf(combined_score):
+                combined_score = 0
+            
+            result['combined_score'] = combined_score
+    elif query_text:
+        # If only query_text is provided, use similarity as the score
+        for result in results:
+            result['combined_score'] = 1 / (1 + result['similarity'])
+    elif ocr_filter:
+        # If only ocr_filter is provided, use ocr_score as the score
+        for result in results:
+            result['combined_score'] = result.get('ocr_score', 0)
 
-        # Ensure all float values are JSON-compliant
+    # Ensure all float values are JSON-compliant
+    for result in results:
         for key, value in result.items():
             if isinstance(value, float):
                 if math.isnan(value) or math.isinf(value):
                     result[key] = None  # or use a default value like 0
 
     # Sort by combined score and take top 100
-    results = sorted(results, key=lambda x: x['combined_score'], reverse=True)[:100]
+    results = sorted(results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
 
     return results, time.time() - start_time
 

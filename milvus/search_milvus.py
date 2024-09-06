@@ -10,7 +10,9 @@ from open_clip import tokenizer
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import io
-from elasticsearch import Elasticsearch
+from opensearchpy import OpenSearch, RequestsHttpConnection
+from requests_aws4auth import AWS4Auth
+import boto3
 import math
 
 load_dotenv()
@@ -36,8 +38,34 @@ clip_model, _, preprocess = open_clip.create_model_and_transforms(
     'ViT-H/14-quickgelu', pretrained='dfn5b')
 clip_model.to(device)
 
-# Initialize Elasticsearch client
-es = Elasticsearch(["http://localhost:9200"])
+# Replace Elasticsearch client initialization with OpenSearch
+region = 'ap-southeast-1'
+service = 'aoss'
+aws_access_key = os.getenv('AWS_ACCESS_KEY')
+aws_secret_key = os.getenv('AWS_SECRET_KEY')
+host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
+
+session = boto3.Session(
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key,
+    region_name=region
+)
+
+credentials = session.get_credentials().get_frozen_credentials()
+
+awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
+                   region, service, session_token=credentials.token)
+
+client = OpenSearch(
+    hosts=[{'host': host, 'port': 443}],
+    http_auth=awsauth,
+    use_ssl=True,
+    verify_certs=True,
+    connection_class=RequestsHttpConnection,
+    timeout=60,
+    max_retries=5,
+    retry_on_timeout=True
+)
 
 def encode_text(text):
     text_tokens = tokenizer.tokenize(text).to(device)
@@ -88,16 +116,15 @@ def query(query_text=None, ocr_filter=None):
                 })
 
     if ocr_filter:
-        # Perform Elasticsearch search for OCR
+        # Perform OpenSearch search for OCR
         es_query = {
             "query": {
                 "match": {
-                    "text": ocr_filter
+                    "path": ocr_filter
                 }
-            },
-            "size": 1000  # Adjust this number as needed
+            }
         }
-        es_results = es.search(index="ocr_result", body=es_query)
+        es_results = client.search(index="ocr", body=es_query)
         
         for hit in es_results['hits']['hits']:
             file_path = hit['_source']['path']
@@ -236,16 +263,19 @@ def search_by_image(image_content, ocr_filter=None, results=100):
 
 def get_ocr_text(file_path):
     try:
-        es_query = {
+        search_body = {
             "query": {
                 "match": {
                     "path": file_path
                 }
             }
         }
-        es_result = es.search(index="ocr_result", body=es_query)
-        if es_result['hits']['hits']:
-            return es_result['hits']['hits'][0]['_source']['text']
+        response = client.search(
+            index="ocr",
+            body=search_body
+        )
+        if response['hits']['hits']:
+            return response['hits']['hits'][0]['_source']['text']
     except Exception as e:
         print(f"Error retrieving OCR text: {str(e)}")
     return ""

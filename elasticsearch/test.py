@@ -1,18 +1,20 @@
-from opensearchpy import OpenSearch, RequestsHttpConnection
+import json
+from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
 from requests_aws4auth import AWS4Auth
 import boto3
 import dotenv
 import os
+from tqdm import tqdm
 
 # Load environment variables
 dotenv.load_dotenv()
 
 # AWS credentials
 region = 'ap-southeast-1'
-service = 'es'  # OpenSearch is identified as 'es'
+service = 'aoss'
 aws_access_key = os.getenv('AWS_ACCESS_KEY')
 aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = 'search-aic-ocr-7bfs75oseh5ep5dbwjenysalwa.ap-southeast-1.es.amazonaws.com'
+host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
 
 # Get AWS credentials using boto3
 session = boto3.Session(
@@ -34,35 +36,29 @@ client = OpenSearch(
     http_auth=awsauth,
     use_ssl=True,
     verify_certs=True,
-    connection_class=RequestsHttpConnection
+    connection_class=RequestsHttpConnection,
+    timeout=60,
+    max_retries=5,
+    retry_on_timeout=True
 )
 
-index_name = 'python-test-index'
-index_body = {
-    'settings': {
-        'index': {
-            'number_of_shards': 2
-        }
-    }
+# Define collection name
+collection_name = 'ocr'
+
+# Retrieve sample documents from the collection
+search_body = {
+    "query": {"match_all": {}},
+    "size": 10  # Limit to 10 documents for verification
 }
 
-response = client.indices.create(index_name, body=index_body)
-print('\nCreating index:')
-print(response)
-
-document = {
-    'title': 'Moneyball',
-    'director': 'Bennett Miller',
-    'year': '2011'
-}
-id = '1'
-
-response = client.index(
-    index=index_name,
-    body=document,
-    id=id,
-    refresh=True
-)
-
-print('\nAdding document:')
-print(response)
+try:
+    response = client.search(
+        index=collection_name,
+        body=search_body
+    )
+    print('\nSample of indexed documents:')
+    for hit in response['hits']['hits']:
+        print(hit['_source'])
+except Exception as e:
+    print('\nSearch error:')
+    print(e)

@@ -7,8 +7,9 @@ import os
 from app import App
 import json
 from milvus import search_milvus as milvus_search
-from elasticsearch import Elasticsearch
-from elasticsearch.exceptions import ConnectionError as ESConnectionError
+from opensearchpy import OpenSearch, RequestsHttpConnection
+from requests_aws4auth import AWS4Auth
+import boto3
 from typing import List, Optional
 from pymongo import MongoClient
 import math
@@ -36,7 +37,34 @@ app.add_middleware(
 path_midas = "/home/nguyenhoangphuc-22521129/AIC2024/static/keyframes_preprocess"
 app.mount("/images", StaticFiles(directory=path_midas), name="images")
 
-es = Elasticsearch(["http://localhost:9200"])
+# Replace Elasticsearch client initialization with OpenSearch
+region = 'ap-southeast-1'
+service = 'aoss'
+aws_access_key = os.getenv('AWS_ACCESS_KEY')
+aws_secret_key = os.getenv('AWS_SECRET_KEY')
+host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
+
+session = boto3.Session(
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key,
+    region_name=region
+)
+
+credentials = session.get_credentials().get_frozen_credentials()
+
+awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
+                   region, service, session_token=credentials.token)
+
+client = OpenSearch(
+    hosts=[{'host': host, 'port': 443}],
+    http_auth=awsauth,
+    use_ssl=True,
+    verify_certs=True,
+    connection_class=RequestsHttpConnection,
+    timeout=60,
+    max_retries=5,
+    retry_on_timeout=True
+)
 
 # MongoDB connection
 uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -96,14 +124,43 @@ async def search_milvus_endpoint(
                     if math.isnan(value) or math.isinf(value):
                         result[key] = None  # or use a default value like 0
         
+        if ocr_filter:
+            # Perform OpenSearch search for OCR
+            es_query = {
+                "query": {
+                    "match": {
+                        "text": ocr_filter
+                    }
+                },
+                "size": 1000  # Adjust this number as needed
+            }
+            es_results = client.search(index="ocr", body=es_query)
+            
+            for hit in es_results['hits']['hits']:
+                file_path = hit['_source']['path']
+                ocr_text = hit['_source']['text']
+                
+                # Check if this file_path already exists in results
+                existing_result = next((item for item in filtered_results if item["file_path"] == file_path), None)
+                
+                if existing_result:
+                    # If it exists, update the OCR score
+                    existing_result["ocr_score"] = hit['_score']
+                else:
+                    # If it doesn't exist, add a new entry
+                    filtered_results.append({
+                        "file_path": file_path,
+                        "ocr_text": ocr_text,
+                        "ocr_score": hit['_score'],
+                        "similarity": float('inf')  # Set to infinity as we don't have a similarity score
+                    })
+
         return JSONResponse(content={
             "results": filtered_results, 
             "search_time": search_time,
             "original_query": search_query,
             "translated_query": translated_query
         })
-    except ESConnectionError:
-        raise HTTPException(status_code=503, detail="Elasticsearch service is unavailable")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
@@ -240,8 +297,6 @@ async def search_milvus_by_image(
             processed_results.append(processed_result)
         
         return JSONResponse(content={"results": processed_results, "search_time": search_time})
-    except ESConnectionError:
-        raise HTTPException(status_code=503, detail="Elasticsearch service is unavailable")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 

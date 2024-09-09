@@ -108,7 +108,7 @@ async def search_milvus_endpoint(
             translated_query = None
 
         # Perform Milvus search with translated query
-        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter)
+        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000)  # Increase limit to 1000
         
         # Apply object filters if provided
         if obj_filters or obj_position_filters:
@@ -123,8 +123,11 @@ async def search_milvus_endpoint(
                     if math.isnan(value) or math.isinf(value):
                         result[key] = None
 
+        # Sort results by combined score (already calculated in search_milvus.py)
+        sorted_results = sorted(filtered_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
+
         return JSONResponse(content={
-            "results": filtered_results, 
+            "results": sorted_results, 
             "search_time": search_time,
             "original_query": search_query,
             "translated_query": translated_query

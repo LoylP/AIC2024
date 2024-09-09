@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Select, Input, Button, message } from "antd";
-import logo from "../static/logo.png";
 import "./Search.css";
-import { PlusOutlined, MinusOutlined } from "@ant-design/icons";
 
 const { Panel } = Collapse;
 const { Option } = Select;
@@ -266,17 +264,9 @@ const Search = () => {
 						style={{
 							backgroundColor: "white",
 						}}>
-						<img
-							src={logo}
-							alt="logo"
-							style={{
-								maxWidth: 250,
-								maxHeight: 250,
-								padding: 10,
-								justifyContent: "center",
-								marginLeft: 30,
-							}}
-						/>
+						<h1 className="text-4xl font-bold text-center mb-6 bg-gradient-to-r from-blue-500 to-teal-400 text-transparent bg-clip-text drop-shadow-lg font-sans tracking-wide">
+							W1-Artemis
+						</h1>
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-2xl font-bold text-black">Your query</h2>
 							<button

@@ -135,6 +135,75 @@ async def search_milvus_endpoint(
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+    
+# Initialize an additional model
+sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def combine_results(clip_results, sbert_results, weights=(0.7, 0.3)):
+    combined = {}
+    for result in clip_results + sbert_results:
+        if result['file_path'] not in combined:
+            combined[result['file_path']] = result
+            combined[result['file_path']]['combined_score'] = 0
+        
+        if result in clip_results:
+            combined[result['file_path']]['combined_score'] += weights[0] * result['similarity']
+        else:
+            combined[result['file_path']]['combined_score'] += weights[1] * result['similarity']
+    
+    return sorted(combined.values(), key=lambda x: x['combined_score'], reverse=True)
+
+@app.get("/api/milvus/search")
+async def search_milvus_endpoint(
+    search_query: Optional[str] = Query(None, description="Main search query"),
+    ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
+    obj_filters: Optional[List[str]] = Query(None),
+    obj_position_filters: Optional[str] = None
+):
+    try:
+        # Translate only the search query to English
+        if search_query:
+            translated_query = await translate_to_english(search_query)
+            print(f"Original query: {search_query}")
+            print(f"Translated query: {translated_query}")
+        else:
+            translated_query = None
+
+        # Perform Milvus search with translated query
+        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000)  # Increase limit to 1000
+        
+        # Apply object filters if provided
+        if obj_filters or obj_position_filters:
+            filtered_results = filter_results_by_objects(milvus_results, obj_filters, obj_position_filters)
+        else:
+            filtered_results = milvus_results
+        
+        # Ensure all float values are JSON-compliant
+        for result in filtered_results:
+            for key, value in result.items():
+                if isinstance(value, float):
+                    if math.isnan(value) or math.isinf(value):
+                        result[key] = None
+
+        # Sort results by combined score (already calculated in search_milvus.py)
+        sorted_results = sorted(filtered_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
+
+        # Perform search with SBERT
+        sbert_embedding = sbert_model.encode(search_query)
+        sbert_results, _ = milvus_search.query_sbert(sbert_embedding, limit=1000)
+        
+        # Combine results
+        combined_results = combine_results(milvus_results, sbert_results)
+        
+        return JSONResponse(content={
+            "results": combined_results, 
+            "search_time": search_time,
+            "original_query": search_query,
+            "translated_query": translated_query
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
 
 def filter_results_by_objects(results, obj_filters, obj_position_filters):
     file_paths = [result['file_path'] for result in results]
@@ -193,13 +262,6 @@ def filter_results_by_objects(results, obj_filters, obj_position_filters):
     ]
 
     return final_results
-
-@app.get("/images/{filename}")
-async def serve_image(filename: str):
-    file_path = f"{path_midas}/{filename}"
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(file_path)
 
 @app.get("/api/search_similar")
 async def search_similar(
@@ -283,6 +345,13 @@ async def export_to_csv(results: List[dict]):
     
     return FileResponse(tmpfile.name, media_type='text/csv', filename='query.csv')
 
+@app.get("/images/{filename}")
+async def serve_image(filename: str):
+    file_path = f"{path_midas}/{filename}"
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(file_path)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
@@ -295,71 +364,3 @@ async def translate_to_english(text):
     except Exception as e:
         print(f"Translation error: {str(e)}")
         return text  # Return original text if translation fails
-
-# Initialize an additional model
-sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
-
-def combine_results(clip_results, sbert_results, weights=(0.7, 0.3)):
-    combined = {}
-    for result in clip_results + sbert_results:
-        if result['file_path'] not in combined:
-            combined[result['file_path']] = result
-            combined[result['file_path']]['combined_score'] = 0
-        
-        if result in clip_results:
-            combined[result['file_path']]['combined_score'] += weights[0] * result['similarity']
-        else:
-            combined[result['file_path']]['combined_score'] += weights[1] * result['similarity']
-    
-    return sorted(combined.values(), key=lambda x: x['combined_score'], reverse=True)
-
-@app.get("/api/milvus/search")
-async def search_milvus_endpoint(
-    search_query: Optional[str] = Query(None, description="Main search query"),
-    ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
-    obj_filters: Optional[List[str]] = Query(None),
-    obj_position_filters: Optional[str] = None
-):
-    try:
-        # Translate only the search query to English
-        if search_query:
-            translated_query = await translate_to_english(search_query)
-            print(f"Original query: {search_query}")
-            print(f"Translated query: {translated_query}")
-        else:
-            translated_query = None
-
-        # Perform Milvus search with translated query
-        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000)  # Increase limit to 1000
-        
-        # Apply object filters if provided
-        if obj_filters or obj_position_filters:
-            filtered_results = filter_results_by_objects(milvus_results, obj_filters, obj_position_filters)
-        else:
-            filtered_results = milvus_results
-        
-        # Ensure all float values are JSON-compliant
-        for result in filtered_results:
-            for key, value in result.items():
-                if isinstance(value, float):
-                    if math.isnan(value) or math.isinf(value):
-                        result[key] = None
-
-        # Sort results by combined score (already calculated in search_milvus.py)
-        sorted_results = sorted(filtered_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
-
-        # Perform search with SBERT
-        sbert_embedding = sbert_model.encode(search_query)
-        sbert_results, _ = milvus_search.query_sbert(sbert_embedding, limit=1000)
-        
-        # Combine results
-        combined_results = combine_results(milvus_results, sbert_results)
-        
-        return JSONResponse(content={
-            "results": combined_results, 
-            "search_time": search_time,
-            "original_query": search_query,
-            "translated_query": translated_query
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")

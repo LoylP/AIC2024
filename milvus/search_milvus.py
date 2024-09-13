@@ -242,14 +242,19 @@ def search_by_image(image_content, ocr_filter=None, results=100):
             if math.isnan(similarity) or math.isinf(similarity):
                 similarity = float('inf')  # or some other appropriate value
             
-            processed_results.append({
+            result_dict = {
                 "id": hit.entity.get("id"),
                 "VideosId": hit.entity.get("VideosId").split("/")[-1] if hit.entity.get("VideosId") else None,
                 "frame": hit.entity.get("frame"),
                 "file_path": hit.entity.get("file_path"),
                 "similarity": similarity,
-                "ocr_text": get_ocr_text(hit.entity.get("file_path"))
-            })
+            }
+            
+            # Only fetch OCR text if ocr_filter is provided
+            if ocr_filter:
+                result_dict["ocr_text"] = get_ocr_text(hit.entity.get("file_path"))
+            
+            processed_results.append(result_dict)
 
     # Apply OCR filter if provided
     if ocr_filter:
@@ -262,6 +267,8 @@ def search_by_image(image_content, ocr_filter=None, results=100):
 
 
 def get_ocr_text(file_path):
+    if not file_path:
+        return ""
     try:
         search_body = {
             "query": {

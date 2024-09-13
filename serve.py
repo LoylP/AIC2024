@@ -328,16 +328,14 @@ async def search_similar(
 
 @app.post("/api/milvus/search_by_image")
 async def search_milvus_by_image(
-    image_url: str = Query(..., description="URL of the image to search"),
+    image: UploadFile = File(...),
     ocr_filter: str = Query(None, description="Optional OCR filter text"),
     results: int = Query(100, description="Number of results to return"),
     obj_filters: Optional[List[str]] = Query(None)
 ):
     try:
-        # Fetch image content from the provided URL
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as response:
-                image_content = await response.read()
+        # Read the image content
+        image_content = await image.read()
 
         search_results, search_time = milvus_search.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
         

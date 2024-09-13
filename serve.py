@@ -19,6 +19,10 @@ import asyncio
 import csv
 import tempfile
 from sentence_transformers import SentenceTransformer
+from nltk.corpus import wordnet
+import nltk
+
+nltk.download('wordnet')
 
 # Add this line
 translator = Translator()
@@ -92,24 +96,50 @@ async def get_all_objects():
         unique_classes = json.load(f)
     return unique_classes
 
+def expand_query(original_query):
+    words = original_query.split()
+    expanded_words = []
+    
+    for word in words:
+        synonyms = []
+        for syn in wordnet.synsets(word):
+            for lemma in syn.lemmas():
+                synonyms.append(lemma.name())
+        
+        expanded_words.append(word)
+        expanded_words.extend(synonyms[:2])  # Add up to 2 synonyms for each word
+    
+    expanded_query = " ".join(set(expanded_words))  # Remove duplicates
+    
+    prompt = f"Find images related to {original_query}. The scene might include {expanded_query}."
+    
+    return prompt
+
 @app.get("/api/milvus/search")
 async def search_milvus_endpoint(
     search_query: Optional[str] = Query(None, description="Main search query"),
     ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
     obj_filters: Optional[List[str]] = Query(None),
-    obj_position_filters: Optional[str] = None
+    obj_position_filters: Optional[str] = None,
+    ef_search: int = Query(100, description="HNSW ef_search parameter"),
+    nprobe: int = Query(10, description="Number of probes for search"),
+    use_expanded_prompt: bool = Query(False, description="Whether to use expanded prompt")
 ):
     try:
-        # Translate only the search query to English
         if search_query:
-            translated_query = await translate_to_english(search_query)
+            # Create an expanded prompt
+            expanded_prompt = expand_query(search_query) if use_expanded_prompt else search_query
+            
+            # Translate the query to English
+            translated_query = await translate_to_english(expanded_prompt)
             print(f"Original query: {search_query}")
+            print(f"Expanded prompt: {expanded_prompt}")
             print(f"Translated query: {translated_query}")
         else:
             translated_query = None
 
-        # Perform Milvus search with translated query
-        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000)  # Increase limit to 1000
+        # Use the translated query for searching
+        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
         
         # Apply object filters if provided
         if obj_filters or obj_position_filters:
@@ -131,6 +161,7 @@ async def search_milvus_endpoint(
             "results": sorted_results, 
             "search_time": search_time,
             "original_query": search_query,
+            "expanded_prompt": expanded_prompt if use_expanded_prompt else None,
             "translated_query": translated_query
         })
     except Exception as e:

@@ -78,7 +78,7 @@ def encode_text(text):
     return encoded_text.tolist()
 
 
-def query(query_text=None, ocr_filter=None, limit=300):
+def query(query_text=None, ocr_filter=None, limit=300, ef_search=200, nprobe=10):
     start_time = time.time()
     results = []
 
@@ -89,7 +89,10 @@ def query(query_text=None, ocr_filter=None, limit=300):
         
         search_params = {
             "metric_type": "L2",
-            "params": {"ef": 200}
+            "params": {
+                "ef": ef_search,
+                "nprobe": nprobe
+            }
         }
         
         milvus_results = collection.search(
@@ -217,7 +220,7 @@ def search_by_image(image_content, ocr_filter=None, results=100):
     search_params = {
         "metric_type": "L2",
         "params": {
-            "ef": 200  # ef parameter for HNSW
+            "ef": 100  
         }
     }
     

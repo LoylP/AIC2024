@@ -14,6 +14,7 @@ from opensearchpy import OpenSearch, RequestsHttpConnection
 from requests_aws4auth import AWS4Auth
 import boto3
 import math
+from torch.cuda.amp import autocast  # Import autocast for mixed precision
 
 load_dotenv()
 
@@ -70,7 +71,8 @@ client = OpenSearch(
 def encode_text(text):
     text_tokens = tokenizer.tokenize(text).to(device)
     with torch.no_grad():
-        text_features = clip_model.encode_text(text_tokens).float()
+        with autocast():  # Enable mixed precision
+            text_features = clip_model.encode_text(text_tokens).float()
 
     # Convert the tensor to a numpy array and flatten it
     encoded_text = text_features.cpu().numpy().flatten()
@@ -200,7 +202,8 @@ def encode_image(image_content):
     image = Image.open(io.BytesIO(image_content)).convert('RGB')
     image_input = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
-        image_features = clip_model.encode_image(image_input).float()
+        with autocast():  # Enable mixed precision
+            image_features = clip_model.encode_image(image_input).float()
     
     # Convert the tensor to a numpy array and flatten it
     encoded_image = image_features.cpu().numpy().flatten()

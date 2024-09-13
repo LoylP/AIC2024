@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Spin, Collapse, Select, Input, Button, message, Checkbox } from "antd";
+import { Spin, Collapse, Select, Input, Button, message } from "antd";
 import "./Search.css";
 
 const { Panel } = Collapse;
@@ -18,7 +18,6 @@ const Search = () => {
 	const [objectFilters, setObjectFilters] = useState([{ class: "", value: "" }]);
 	const [classes, setClasses] = useState([]); // New state for class options
 	const modalRef = useRef(null);
-	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false);
 
 	const itemsPerPage = 20;
 
@@ -65,7 +64,6 @@ const Search = () => {
 				if (objFiltersString) {
 					url.searchParams.append("obj_filters", objFiltersString);
 				}
-				url.searchParams.append("use_expanded_prompt", useExpandedPrompt);
 
 				// Perform search even if only OCR filter is provided
 				if (searchValue || ocrDescription || objFiltersString) {
@@ -101,9 +99,6 @@ const Search = () => {
 			const data = await response.json();
 			if (data.results && Array.isArray(data.results)) {
 				setResults(data.results);
-				if (data.expanded_prompt) {
-					console.log("Expanded prompt:", data.expanded_prompt);
-				}
 			} else {
 				console.error("Unexpected data structure:", data);
 				setResults([]);
@@ -144,31 +139,15 @@ const Search = () => {
 			try {
 				const imageUrl = `http://127.0.0.1:8000/images/${selectedImage.file_path}`;
 				
-				// Construct the obj_filters parameter
-				const objFiltersString = objectFilters
-					.filter((filter) => filter.class && filter.value)
-					.map((filter) => `${filter.class}=${filter.value}`)
-					.join(",");
-
-				const url = new URL("http://127.0.0.1:8000/api/milvus/search_by_image");
-				url.searchParams.append("image_url", imageUrl);
-				if (ocrDescription) {
-					url.searchParams.append("ocr_filter", ocrDescription);
-				}
-				url.searchParams.append("results", "100");
-				if (objFiltersString) {
-					url.searchParams.append("obj_filters", objFiltersString);
-				}
-
-				const searchResponse = await fetch(url, {
-					method: "POST",
+				const response = await fetch(`http://127.0.0.1:8000/api/search_similar?image_path=${encodeURIComponent(selectedImage.file_path)}&ocr_filter=${ocrDescription}&results=100`, {
+					method: "GET",
 				});
 
-				if (!searchResponse.ok) {
-					throw new Error(`HTTP error! status: ${searchResponse.status}`);
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
 				}
 
-				const data = await searchResponse.json();
+				const data = await response.json();
 				if (data.results && Array.isArray(data.results)) {
 					setResults(data.results);
 				} else {
@@ -303,13 +282,6 @@ const Search = () => {
 								onChange={handleFileChange}
 							/>
 						)}
-						<Checkbox
-							checked={useExpandedPrompt}
-							onChange={(e) => setUseExpandedPrompt(e.target.checked)}
-							className="mb-4 text-black"
-						>
-							Use Expanded Prompt
-						</Checkbox>
 						<button
 							onClick={handleButtonSearch}
 							disabled={inputType === "text" ? (!searchValue && !ocrDescription && objectFilters.every(f => !f.class && !f.value)) : !selectedFile}

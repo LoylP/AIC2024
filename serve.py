@@ -83,7 +83,7 @@ class ImageData(BaseModel):
     path: str
     similarity: float
     ocr_text: str
-    text: str
+    text: str = ""  
 
 @app.get("/")
 async def read_root():
@@ -96,22 +96,25 @@ async def get_all_objects():
         unique_classes = json.load(f)
     return unique_classes
 
-def expand_query(original_query):
-    words = original_query.split()
+async def expand_query(translated_query):
+    words = translated_query.split()
     expanded_words = []
     
     for word in words:
-        synonyms = []
+        synonyms = set()  # Sử dụng set để tránh trùng lặp
         for syn in wordnet.synsets(word):
             for lemma in syn.lemmas():
-                synonyms.append(lemma.name())
+                synonyms.add(lemma.name())
         
+        # Thêm từ gốc và một số từ đồng nghĩa liên quan
         expanded_words.append(word)
-        expanded_words.extend(synonyms[:2])  # Add up to 2 synonyms for each word
+        relevant_synonyms = [syn for syn in synonyms if syn != word][:1]  # Giới hạn tối đa 2 từ đồng nghĩa
+        expanded_words.extend(relevant_synonyms)
     
-    expanded_query = " ".join(set(expanded_words))  # Remove duplicates
+    expanded_query = " ".join(set(expanded_words))  # Kết hợp mà không loại bỏ trùng lặp
     
-    prompt = f"Find images related to {original_query}. The scene might include {expanded_query}."
+    # Tạo prompt có cấu trúc hơn
+    prompt = f"Find images related to: '{translated_query}'. The scene may include: {expanded_query}."
     
     return prompt
 
@@ -126,20 +129,19 @@ async def search_milvus_endpoint(
     use_expanded_prompt: bool = Query(False, description="Whether to use expanded prompt")
 ):
     try:
-        if search_query:
-            # Create an expanded prompt
-            expanded_prompt = expand_query(search_query) if use_expanded_prompt else search_query
-            
-            # Translate the query to English
-            translated_query = await translate_to_english(expanded_prompt)
+        translated_query = await translate_to_english(search_query) if search_query else None
+        
+        if use_expanded_prompt and translated_query:
+            # Tạo prompt mở rộng từ truy vấn đã dịch
+            expanded_prompt = await expand_query(translated_query)
             print(f"Original query: {search_query}")
-            print(f"Expanded prompt: {expanded_prompt}")
             print(f"Translated query: {translated_query}")
+            print(f"Expanded prompt: {expanded_prompt}")
         else:
-            translated_query = None
-
-        # Use the translated query for searching
-        milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
+            expanded_prompt = translated_query
+        
+        # Sử dụng truy vấn đã dịch hoặc mở rộng để tìm kiếm
+        milvus_results, search_time = milvus_search.query(expanded_prompt, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
         
         # Apply object filters if provided
         if obj_filters or obj_position_filters:
@@ -294,38 +296,6 @@ def filter_results_by_objects(results, obj_filters, obj_position_filters):
 
     return final_results
 
-@app.get("/api/search_similar")
-async def search_similar(
-    image_path: str = Query(...,
-                            description="Path of the image to search similar"),
-    ocr_filter: str = Query(None, description="Optional OCR filter text"),
-    results: int = Query(100, description="Number of results to return")
-):
-    app_instance = App()
-
-    with open(os.path.join(path_midas, image_path), "rb") as image_file:
-        image_content = image_file.read()
-    search_results = app_instance.search_by_image(
-        image_content, ocr_filter=ocr_filter, results=results)
-
-    if not isinstance(search_results, list):
-        raise HTTPException(status_code=400, detail="Invalid search results")
-
-    image_data_list = []
-    for idx, result in enumerate(search_results):
-        frame, file = os.path.split(result['path'])
-        image_data = ImageData(
-            id=idx + 1,
-            frame=frame,
-            file=file,
-            path=result['path'],
-            similarity=result['similarity'],
-            ocr_text=result['ocr_text']
-        )
-        image_data_list.append(image_data.dict())
-
-    return JSONResponse(content=image_data_list)
-
 @app.post("/api/milvus/search_by_image")
 async def search_milvus_by_image(
     image: UploadFile = File(...),
@@ -380,6 +350,40 @@ async def serve_image(filename: str):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
+
+@app.get("/api/search_similar")
+async def search_similar(
+    image_path: str = Query(..., description="Path of the image to search similar"),
+    ocr_filter: str = Query(None, description="Optional OCR filter text"),
+    results: int = Query(100, description="Number of results to return")
+):
+    # Ensure the image path is correct
+    full_image_path = os.path.join(path_midas, image_path)
+    if not os.path.isfile(full_image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Read the image content
+    with open(full_image_path, "rb") as image_file:
+        image_content = image_file.read()
+
+    # Call the search_by_image method from milvus_search
+    search_results, search_time = milvus_search.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
+
+    if not isinstance(search_results, list):
+        raise HTTPException(status_code=400, detail="Invalid search results")
+
+    image_data_list = []
+    for idx, result in enumerate(search_results):
+        image_data = {
+            "id": idx + 1,
+            "VideosId": result.get('VideosId', ''),  # Assuming this field exists in the result
+            "frame": result.get('frame', ''),
+            "file_path": result.get('file_path', ''),
+            "similarity": result.get('similarity', 0)
+        }
+        image_data_list.append(image_data)
+
+    return JSONResponse(content={"results": image_data_list, "search_time": search_time, "search_query": image_path})
 
 if __name__ == "__main__":
     import uvicorn

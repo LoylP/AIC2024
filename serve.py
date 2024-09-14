@@ -71,7 +71,7 @@ client = OpenSearch(
 )
 
 # MongoDB connection
-uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = os.getenv('MONGO_URI')
 client = MongoClient(uri)
 db = client['obj-detection']
 collection = db['object-detection-results']
@@ -185,58 +185,6 @@ def combine_results(clip_results, sbert_results, weights=(0.7, 0.3)):
             combined[result['file_path']]['combined_score'] += weights[1] * result['similarity']
     
     return sorted(combined.values(), key=lambda x: x['combined_score'], reverse=True)
-
-# @app.get("/api/milvus/search")
-# async def search_milvus_endpoint(
-#     search_query: Optional[str] = Query(None, description="Main search query"),
-#     ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
-#     obj_filters: Optional[List[str]] = Query(None),
-#     obj_position_filters: Optional[str] = None
-# ):
-#     try:
-#         # Translate only the search query to English
-#         if search_query:
-#             translated_query = await translate_to_english(search_query)
-#             print(f"Original query: {search_query}")
-#             print(f"Translated query: {translated_query}")
-#         else:
-#             translated_query = None
-
-#         # Perform Milvus search with translated query
-#         milvus_results, search_time = milvus_search.query(translated_query, ocr_filter, limit=1000)  # Increase limit to 1000
-        
-#         # Apply object filters if provided
-#         if obj_filters or obj_position_filters:
-#             filtered_results = filter_results_by_objects(milvus_results, obj_filters, obj_position_filters)
-#         else:
-#             filtered_results = milvus_results
-        
-#         # Ensure all float values are JSON-compliant
-#         for result in filtered_results:
-#             for key, value in result.items():
-#                 if isinstance(value, float):
-#                     if math.isnan(value) or math.isinf(value):
-#                         result[key] = None
-
-#         # Sort results by combined score (already calculated in search_milvus.py)
-#         sorted_results = sorted(filtered_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
-
-#         # Perform search with SBERT
-#         sbert_embedding = sbert_model.encode(search_query)
-#         sbert_results, _ = milvus_search.query_sbert(sbert_embedding, limit=1000)
-        
-#         # Combine results
-#         combined_results = combine_results(milvus_results, sbert_results)
-        
-#         return JSONResponse(content={
-#             "results": combined_results, 
-#             "search_time": search_time,
-#             "original_query": search_query,
-#             "translated_query": translated_query
-#         })
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-
 
 def filter_results_by_objects(results, obj_filters, obj_position_filters):
     file_paths = [result['file_path'] for result in results]

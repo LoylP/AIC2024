@@ -14,7 +14,7 @@ region = 'ap-southeast-1'
 service = 'aoss'
 aws_access_key = os.getenv('AWS_ACCESS_KEY')
 aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
+host = os.getenv('HOST_OPENSEARCH')
 
 # Get AWS credentials using boto3
 session = boto3.Session(

@@ -2,7 +2,9 @@
 
 from pymongo import MongoClient
 import sys
-uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+import os
+
+uri = os.getenv('MONGO_URI')
 client = MongoClient(uri)
 # Specify the database to be used
 db = client.sample_database

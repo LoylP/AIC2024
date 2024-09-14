@@ -12,8 +12,8 @@ token = os.getenv('MILVUS_TOKEN')
 # connections.connect(alias="default", uri=uri, token=token)
 connections.connect(
     alias="default",
-    uri="https://in01-5ce0d1eea2a0135.gcp-asia-southeast1.vectordb.zillizcloud.com:443",
-    token="db_admin:Tp9!Nx;Cnar7ONy7"
+    uri=os.getenv('MILVUS_URI'),
+    token=os.getenv('MILVUS_TOKEN')
 )
 
 # Define the schema for Milvus collection

@@ -1,8 +1,9 @@
 from pymongo import MongoClient
 import json
+import os
 
 # MongoDB URI
-uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = os.getenv('MONGO_URI')
 client = MongoClient(uri)
 
 # Access the database and collection

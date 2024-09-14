@@ -5,7 +5,7 @@ from pymongo import MongoClient
 from tqdm import tqdm
 
 # MongoDB connection
-uri = "mongodb+srv://tranduongminhdai:mutoyugi@cluster0.4crgy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = os.getenv('MONGO_URI')
 client = MongoClient(uri)
 
 db = client['obj-detection']

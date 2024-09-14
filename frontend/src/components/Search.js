@@ -18,6 +18,7 @@ const Search = () => {
 	const [objectFilters, setObjectFilters] = useState([{ class: "", value: "" }]);
 	const [classes, setClasses] = useState([]); // New state for class options
 	const modalRef = useRef(null);
+	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false); // New state for using expanded prompt
 
 	const itemsPerPage = 20;
 
@@ -64,6 +65,7 @@ const Search = () => {
 				if (objFiltersString) {
 					url.searchParams.append("obj_filters", objFiltersString);
 				}
+				url.searchParams.append("use_expanded_prompt", useExpandedPrompt); // New line
 
 				// Perform search even if only OCR filter is provided
 				if (searchValue || ocrDescription || objFiltersString) {
@@ -282,6 +284,15 @@ const Search = () => {
 								onChange={handleFileChange}
 							/>
 						)}
+						<div className="flex items-center mb-4"> {/* New div for the expand button */}
+							<input
+								type="checkbox"
+								checked={useExpandedPrompt}
+								onChange={(e) => setUseExpandedPrompt(e.target.checked)} // New line
+								className="mr-2"
+							/>
+							<label>Use Expanded Prompt</label>
+							</div>
 						<button
 							onClick={handleButtonSearch}
 							disabled={inputType === "text" ? (!searchValue && !ocrDescription && objectFilters.every(f => !f.class && !f.value)) : !selectedFile}

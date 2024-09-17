@@ -80,6 +80,10 @@ def encode_text(text):
     return encoded_text.tolist()
 
 
+def frame_to_timestamp(frame, fps=25):
+    return frame / fps  # Chuyển đổi frame thành thời gian (giây)
+
+
 def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_search=200, nprobe=10):
     start_time = time.time()
     results = []
@@ -121,8 +125,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
     if next_queries:
         for next_query in next_queries:
             next_query_embedding = encode_text(next_query)
-            next_query_embedding = torch.tensor(
-                next_query_embedding).to('cpu').numpy()
+            next_query_embedding = torch.tensor(next_query_embedding).to('cpu').numpy()
 
             next_milvus_results = collection.search(
                 [next_query_embedding],
@@ -153,15 +156,27 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
         file_path = next_result['file_path']
         if file_path in combined_results:
             # If file exists in both, increase the score and update similarity if needed
-            combined_results[file_path]['similarity'] = min(
-                combined_results[file_path]['similarity'], next_result['similarity'])
-            combined_results[file_path]['combined_score'] = combined_results[file_path].get(
-                'combined_score', 1) + 0.5
-        else:
-            # If the file only exists in next query, add it
-            combined_results[file_path] = next_result
+            combined_results[file_path]['similarity'] = min(combined_results[file_path]['similarity'], next_result['similarity'])
+            combined_results[file_path]['combined_score'] = combined_results[file_path].get('combined_score', 1) + 0.5
+            
+            # Tính toán khoảng cách thời gian chỉ nếu cùng thư mục
+            if combined_results[file_path]['file_path'].split('/')[1] == next_result['file_path'].split('/')[1]:
+                time_difference_weight = 0.1  # Weight for time difference
+                threshold_time = 10  # Maximum time difference (seconds) to prioritize
+                next_frame_time = frame_to_timestamp(next_result['frame'])
+                main_frame_time = frame_to_timestamp(combined_results[file_path]['frame'])
+                time_difference = abs(next_frame_time - main_frame_time)
+                
+                if time_difference < threshold_time:
+                    combined_results[file_path]['similarity'] *= (1 - time_difference_weight)
+            
+            combined_results[file_path]['similarity'] *= 0.85
 
-    # Apply OCR filtering if provided
+        else:
+            combined_results[file_path] = next_result
+            combined_results[file_path]['similarity'] *= 0.85
+
+    # Apply OCR filtering if provided and there are no next_queries
     if ocr_filter and not next_queries:
         es_query = {
             "query": {
@@ -190,15 +205,12 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     "file_path": file_path,
                     "ocr_text": ocr_text,
                     "ocr_score": hit['_score'],
-                    # Set to infinity as we don't have a similarity score
-                    "similarity": float('inf')
+                    "similarity": float('inf')  # Set to infinity as we don't have a similarity score
                 }
 
     # Calculate combined score
     for result in combined_results.values():
-        query_score = 1 / \
-            (1 + result['similarity']
-             ) if result['similarity'] != float('inf') else 0
+        query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
         if 'ocr_score' in result:
             ocr_score = result['ocr_score'] / 10
             result['combined_score'] = (query_score * 0.7 + ocr_score * 0.3)
@@ -208,6 +220,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
         if result.get("source") == "next":
             result['combined_score'] += 0.5
 
+    # Ensure all float values are JSON-compliant
     for result in combined_results.values():
         for key, value in result.items():
             if isinstance(value, float):
@@ -215,8 +228,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     result[key] = None
 
     # Sort results by combined score and take top 'limit' results
-    final_results = sorted(combined_results.values(), key=lambda x: x.get(
-        'combined_score', 0), reverse=True)[:limit]
+    final_results = sorted(combined_results.values(), key=lambda x: x.get('combined_score', 0), reverse=True)[:limit]
 
     return final_results, time.time() - start_time
 

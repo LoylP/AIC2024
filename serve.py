@@ -38,9 +38,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-path_midas = os.getenv('KEYFRAMES_PATH')
+path = os.getenv('KEYFRAMES_PATH')
 base_path = os.getenv('VIDEO_PATH')
-app.mount("/images", StaticFiles(directory=path_midas), name="images")
+app.mount("/images", StaticFiles(directory=path), name="images")
 
 # Replace Elasticsearch client initialization with OpenSearch
 region = os.getenv('AWS_REGION')
@@ -171,7 +171,19 @@ async def search_milvus_endpoint(
                 print(f"Next query: {translated_next_query}")
                 next_results, _ = milvus_search.query(
                     translated_next_query, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
-                milvus_results.extend(next_results)  # Combine results
+
+                
+                for next_result in next_results:
+                    # Kiểm tra độ tương đồng với kết quả từ truy vấn chính
+                    if next_result['similarity'] > 0.5:  # Ngưỡng có thể điều chỉnh
+                        # Kiểm tra xem kết quả đã tồn tại trong milvus_results chưa
+                        existing_result = next((res for res in milvus_results if res['file_path'] == next_result['file_path']), None)
+                        if existing_result:
+                            # Nếu đã tồn tại, tăng cường độ tương đồng
+                            existing_result['similarity'] = max(existing_result['similarity'], next_result['similarity'])
+                            existing_result['combined_score'] = existing_result.get('combined_score', 0) + 0.5  # Tăng điểm kết hợp
+                        else:
+                            milvus_results.append(next_result)  # Thêm kết quả mới
 
         # Apply object filters if provided
         if obj_filters or obj_position_filters:
@@ -188,8 +200,7 @@ async def search_milvus_endpoint(
                         result[key] = None
 
             # Add folder name to the result
-            result["folder"] = result.get('file_path').split(
-                '/')[0]  # Extract folder name
+            result["folder"] = result.get('file_path').split('/')[0]  
 
         # Remove duplicates and increase score
         unique_results = {}
@@ -197,10 +208,8 @@ async def search_milvus_endpoint(
             file_path = result['file_path']
             if file_path in unique_results:
                 # If the file already exists, increase the score
-                # Increase similarity score
                 unique_results[file_path]['similarity'] += result['similarity']
             else:
-                # Otherwise, add the result to the unique results
                 unique_results[file_path] = result
 
         # Convert back to list
@@ -357,7 +366,7 @@ async def export_to_csv(results: List[dict]):
 
 @app.get("/images/{filename}")
 async def serve_image(filename: str):
-    file_path = f"{path_midas}/{filename}"
+    file_path = f"{path}/{filename}"
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
@@ -371,7 +380,7 @@ async def search_similar(
     results: int = Query(100, description="Number of results to return")
 ):
     # Ensure the image path is correct
-    full_image_path = os.path.join(path_midas, image_path)
+    full_image_path = os.path.join(path, image_path)
     if not os.path.isfile(full_image_path):
         raise HTTPException(status_code=404, detail="Image not found")
 
@@ -413,6 +422,35 @@ async def serve_video(folder: str, filename: str):
     response = FileResponse(file_path)
     response.headers["Accept-Ranges"] = "bytes"  # Thêm header Accept-Ranges
     return response
+
+async def serve_images_around(filename: str):
+    folder_path = os.path.join(path, os.path.dirname(filename))  
+    if not os.path.isdir(folder_path):
+        print("Folder not found")
+        return None
+
+    all_files = sorted(os.listdir(folder_path))
+    
+    try:
+        index = all_files.index(os.path.basename(filename)) 
+    except ValueError:
+        print("Image not found")
+        return None
+
+    start_index = max(0, index - 7)
+    end_index = min(len(all_files), index + 8)  
+    surrounding_files = all_files[start_index:end_index]
+
+    # Remove the base path from the image paths
+    relative_image_paths = [os.path.relpath(os.path.join(folder_path, img), path) for img in surrounding_files if os.path.isfile(os.path.join(folder_path, img))]
+    return relative_image_paths
+
+@app.get("/api/serve-images-around")
+async def get_surrounding_images(filename: str = Query(..., description="Path of the image to find surrounding images")):
+    images = await serve_images_around(filename)
+    if images is None:
+        raise HTTPException(status_code=404, detail="Images not found")
+    return {"surrounding_images": images}
 
 if __name__ == "__main__":
     import uvicorn

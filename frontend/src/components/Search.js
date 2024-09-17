@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Select, Input, Button, message } from "antd";
 import "./Search.css";
-import Video from './Video'; // Import the Video component
 
 const { Panel } = Collapse;
 const { Option } = Select;
@@ -23,6 +22,7 @@ const Search = () => {
 	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false);
 	const [isOcrDisabled, setIsOcrDisabled] = useState(false); // New state to control OCR input
 	const [showVideo, setShowVideo] = useState(false); // New state to control video visibility
+	const [surroundingImages, setSurroundingImages] = useState([]); // New state for surrounding images
 
 	const itemsPerPage = 25;
 
@@ -166,10 +166,34 @@ const Search = () => {
 		setCurrentPage(pageNum);
 	};
 
-	const handleImageClick = (image) => {
+	const handleImageClick = async (image) => {
 		setSelectedImage(image);
 		setShowModal(true);
 		setShowVideo(false); // Hide video when selecting a new image
+
+		// Call the API to fetch surrounding images
+		await fetchSurroundingImages(image.file_path); // Pass the file path of the selected image
+	};
+
+	const fetchSurroundingImages = async (imagePath) => {
+		setIsLoading(true);
+		try {
+			const response = await fetch(`http://127.0.0.1:8000/api/serve-images-around?filename=${encodeURIComponent(imagePath)}`);
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+			const data = await response.json();
+			if (data.surrounding_images && Array.isArray(data.surrounding_images)) {
+				setSurroundingImages(data.surrounding_images); // Store surrounding images
+			} else {
+				console.error("Unexpected data structure:", data);
+				setSurroundingImages([]);
+			}
+		} catch (error) {
+			console.error("Error fetching surrounding images:", error);
+		} finally {
+			setIsLoading(false);
+		}
 	};
 
 	const handleCloseModal = () => {
@@ -483,31 +507,28 @@ const Search = () => {
 			</div>
 			{/* Modal for image details */}
 			{showModal && selectedImage && (
-				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-3xl w-full">
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full">
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-2xl font-bold text-black">{selectedImage.file}</h2>
-							<button onClick={handleCloseModal} className="text-2xl text-black">
-								&times;
-							</button>
 						</div>
 						{/* Image display */}
 						{showVideo ? (
 							<video
-							ref={videoRef}
-							className="w-full mb-4 rounded"
-							controls
-							preload="auto"
-							muted
-							crossOrigin="anonymous"
-							autoPlay
-							onLoadedMetadata={() => {
-								videoRef.current.currentTime = selectedImage.frame/25; // Set default time to 10 seconds
-							}}
-						>
-							<source src={`http://localhost:8000/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
-							Your browser does not support the video tag.
-						</video>
+								ref={videoRef}
+								className="w-full mb-4 rounded"
+								controls
+								preload="auto"
+								muted
+								crossOrigin="anonymous"
+								autoPlay
+								onLoadedMetadata={() => {
+									videoRef.current.currentTime = selectedImage.frame / 25; // Set default time to 10 seconds
+								}}
+							>
+								<source src={`http://localhost:8000/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
+								Your browser does not support the video tag.
+							</video>
 						) : (
 							<img
 								src={`http://127.0.0.1:8000/images/${selectedImage.file_path}`}
@@ -515,35 +536,51 @@ const Search = () => {
 								className="w-full mb-4 rounded"
 							/>
 						)}
-						<p className="mb-2 text-black">
-							<strong>Frame:</strong> {selectedImage.frame}
-						</p>
-						<p className="mb-2 text-black">
-							<strong>File:</strong> {selectedImage.file_path}
-						</p>
+						<div className="flex gap-4">
+							<p className="mb-2 text-black">
+								<strong>Frame:</strong> {selectedImage.frame}
+							</p>
+							<p className="mb-2 text-black">
+									<strong>File:</strong> {selectedImage.file_path}
+								</p>
+						</div>
+						
 						<p className="mb-2 text-black">
 							<strong>OCR Text:</strong> {selectedImage.ocr_text}
 						</p>
 						<button
 							onClick={handleSearchSimilar}
-							className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-							Search Similar Images
+							className="bg-blue-500 text-white px-2 py-2 rounded hover:bg-blue-600">
+							Search Similar
 						</button>
 						<button
 							onClick={() => setShowVideo(!showVideo)} 
-							className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 ml-2">
-							{showVideo ? "Show Frame" : "Show Video"}
+							className="bg-green-500 text-white px-2 py-2 rounded hover:bg-green-600 ml-2">
+							{showVideo ? "Frame" : "Video"}
 						</button>
 						<input
 							type="text"
 							value={time}
 							onChange={(e) => setTime(e.target.value)} 
 							placeholder="Enter frame"
-							className="bg-white-500 text-black px-4 py-2 rounded"
+							className="bg-white-500 text-black px-2 py-2 rounded"
 						/>
-						<button onClick={handleSeek} className="bg-amber-500 text-white px-4 py-2 rounded hover:bg-amber-600 ml-2">
+						<button onClick={handleSeek} className="bg-amber-500 text-white px-2 py-2 rounded hover:bg-amber-600 ml-2">
 							Move
 						</button>
+
+						{/* Display surrounding images */}
+						<div className="mt-2 grid grid-cols-3 gap-1 overflow-y-auto max-h-44">
+							{surroundingImages.map((img, index) => (
+								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, file_path: img })}> {/* Update selected image on click */}
+									<img
+										src={`http://127.0.0.1:8000/images/${img}`}
+										alt={`Surrounding ${index + 1}`}
+										className="object-cover rounded cursor-pointer"
+									/>
+								</div>
+							))}
+						</div>
 					</div>
 				</div>
 			)}

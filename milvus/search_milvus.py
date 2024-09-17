@@ -25,7 +25,7 @@ token = os.getenv('MILVUS_TOKEN')
 # connections.connect(alias="default", uri=uri, token=token)
 connections.connect(
     alias="default",
-    uri = os.getenv('MILVUS_URI'),
+    uri=os.getenv('MILVUS_URI'),
     token=os.getenv('MILVUS_TOKEN')
 )
 
@@ -40,12 +40,11 @@ clip_model, _, preprocess = open_clip.create_model_and_transforms(
 clip_model.to(device)
 
 # Replace Elasticsearch client initialization with OpenSearch
-region = 'ap-southeast-1'
+region = os.getenv('AWS_REGION')
 service = 'aoss'
 aws_access_key = os.getenv('AWS_ACCESS_KEY')
 aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
-
+host = os.getenv('HOST_OPENSEARCH')
 session = boto3.Session(
     aws_access_key_id=aws_access_key,
     aws_secret_access_key=aws_secret_key,
@@ -68,6 +67,7 @@ client = OpenSearch(
     retry_on_timeout=True
 )
 
+
 def encode_text(text):
     text_tokens = tokenizer.tokenize(text).to(device)
     with torch.no_grad():
@@ -89,7 +89,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
         # Perform Milvus search for the main query
         query_embedding = encode_text(query_text)
         query_embedding = torch.tensor(query_embedding).to('cpu').numpy()
-        
+
         search_params = {
             "metric_type": "L2",
             "params": {
@@ -97,7 +97,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                 "nprobe": nprobe
             }
         }
-        
+
         milvus_results = collection.search(
             [query_embedding],
             "embedding",
@@ -105,7 +105,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
             limit=limit,
             output_fields=["id", "VideosId", "frame", "file_path"]
         )
-        
+
         for hit in milvus_results:
             for result in hit:
                 results.append({
@@ -116,13 +116,14 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     "similarity": result.distance,
                     "source": "main"  # Mark as main query result
                 })
-    
+
     # Handle next_queries
     if next_queries:
         for next_query in next_queries:
             next_query_embedding = encode_text(next_query)
-            next_query_embedding = torch.tensor(next_query_embedding).to('cpu').numpy()
-            
+            next_query_embedding = torch.tensor(
+                next_query_embedding).to('cpu').numpy()
+
             next_milvus_results = collection.search(
                 [next_query_embedding],
                 "embedding",
@@ -152,8 +153,10 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
         file_path = next_result['file_path']
         if file_path in combined_results:
             # If file exists in both, increase the score and update similarity if needed
-            combined_results[file_path]['similarity'] = min(combined_results[file_path]['similarity'], next_result['similarity'])
-            combined_results[file_path]['combined_score'] = combined_results[file_path].get('combined_score', 1) + 0.5
+            combined_results[file_path]['similarity'] = min(
+                combined_results[file_path]['similarity'], next_result['similarity'])
+            combined_results[file_path]['combined_score'] = combined_results[file_path].get(
+                'combined_score', 1) + 0.5
         else:
             # If the file only exists in next query, add it
             combined_results[file_path] = next_result
@@ -187,12 +190,15 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     "file_path": file_path,
                     "ocr_text": ocr_text,
                     "ocr_score": hit['_score'],
-                    "similarity": float('inf')  # Set to infinity as we don't have a similarity score
+                    # Set to infinity as we don't have a similarity score
+                    "similarity": float('inf')
                 }
 
     # Calculate combined score
     for result in combined_results.values():
-        query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
+        query_score = 1 / \
+            (1 + result['similarity']
+             ) if result['similarity'] != float('inf') else 0
         if 'ocr_score' in result:
             ocr_score = result['ocr_score'] / 10
             result['combined_score'] = (query_score * 0.7 + ocr_score * 0.3)
@@ -209,7 +215,8 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     result[key] = None
 
     # Sort results by combined score and take top 'limit' results
-    final_results = sorted(combined_results.values(), key=lambda x: x.get('combined_score', 0), reverse=True)[:limit]
+    final_results = sorted(combined_results.values(), key=lambda x: x.get(
+        'combined_score', 0), reverse=True)[:limit]
 
     return final_results, time.time() - start_time
 
@@ -242,29 +249,29 @@ def encode_image(image_content):
     with torch.no_grad():
         with autocast():  # Enable mixed precision
             image_features = clip_model.encode_image(image_input).float()
-    
+
     # Convert the tensor to a numpy array and flatten it
     encoded_image = image_features.cpu().numpy().flatten()
-    
+
     return encoded_image.tolist()
 
 
 def search_by_image(image_content, ocr_filter=None, results=100):
     # Measure the start time
     start_time = time.time()
-    
+
     # Encode the image
     image_embedding = encode_image(image_content)
     image_embedding = torch.tensor(image_embedding).to('cpu').numpy()
-    
+
     # Define search parameters with HNSW index
     search_params = {
         "metric_type": "L2",
         "params": {
-            "ef": 100  
+            "ef": 100
         }
     }
-    
+
     # Perform the search
     search_results = collection.search(
         [image_embedding],
@@ -273,7 +280,7 @@ def search_by_image(image_content, ocr_filter=None, results=100):
         limit=results,
         output_fields=["id", "VideosId", "frame", "file_path"]
     )
-    
+
     # Process and return results
     processed_results = []
     for result in search_results:
@@ -282,7 +289,7 @@ def search_by_image(image_content, ocr_filter=None, results=100):
             # Handle non-JSON compliant float values
             if math.isnan(similarity) or math.isinf(similarity):
                 similarity = float('inf')  # or some other appropriate value
-            
+
             result_dict = {
                 "id": hit.entity.get("id"),
                 "VideosId": hit.entity.get("VideosId").split("/")[-1] if hit.entity.get("VideosId") else None,
@@ -290,11 +297,12 @@ def search_by_image(image_content, ocr_filter=None, results=100):
                 "file_path": hit.entity.get("file_path"),
                 "similarity": similarity,
             }
-            
+
             # Only fetch OCR text if ocr_filter is provided
             if ocr_filter:
-                result_dict["ocr_text"] = get_ocr_text(hit.entity.get("file_path"))
-            
+                result_dict["ocr_text"] = get_ocr_text(
+                    hit.entity.get("file_path"))
+
             processed_results.append(result_dict)
 
     # Apply OCR filter if provided

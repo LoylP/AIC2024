@@ -38,16 +38,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-path_midas = "/home/nguyenhoangphuc-22521129/AIC2024/static/keyframes_preprocess"
-base_path = "/home/nguyenhoangphuc-22521129/AIC2024/static/Video"
+path_midas = os.getenv('KEYFRAMES_PATH')
+base_path = os.getenv('VIDEO_PATH')
 app.mount("/images", StaticFiles(directory=path_midas), name="images")
 
 # Replace Elasticsearch client initialization with OpenSearch
-region = 'ap-southeast-1'
+region = os.getenv('AWS_REGION')
 service = 'aoss'
 aws_access_key = os.getenv('AWS_ACCESS_KEY')
 aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
+host = os.getenv('HOST_OPENSEARCH')
 
 session = boto3.Session(
     aws_access_key_id=aws_access_key,
@@ -77,6 +77,7 @@ client = MongoClient(uri)
 db = client['obj-detection']
 collection = db['object-detection-results']
 
+
 class ImageData(BaseModel):
     id: int
     frame: str
@@ -84,11 +85,13 @@ class ImageData(BaseModel):
     path: str
     similarity: float
     ocr_text: str
-    text: str = ""  
+    text: str = ""
+
 
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the Image Search API!"}
+
 
 @app.get("/api/get-all-objects")
 async def get_all_objects():
@@ -97,27 +100,31 @@ async def get_all_objects():
         unique_classes = json.load(f)
     return unique_classes
 
+
 async def expand_query(translated_query):
     words = translated_query.split()
     expanded_words = []
-    
+
     for word in words:
         synonyms = set()  # Sử dụng set để tránh trùng lặp
         for syn in wordnet.synsets(word):
             for lemma in syn.lemmas():
                 synonyms.add(lemma.name())
-        
+
         # Thêm từ gốc và một số từ đồng nghĩa liên quan
         expanded_words.append(word)
-        relevant_synonyms = [syn for syn in synonyms if syn != word][:1]  # Giới hạn tối đa 2 từ đồng nghĩa
+        # Giới hạn tối đa 2 từ đồng nghĩa
+        relevant_synonyms = [syn for syn in synonyms if syn != word][:1]
         expanded_words.extend(relevant_synonyms)
-    
-    expanded_query = " ".join(set(expanded_words))  # Kết hợp mà không loại bỏ trùng lặp
-    
+
+    # Kết hợp mà không loại bỏ trùng lặp
+    expanded_query = " ".join(set(expanded_words))
+
     # Tạo prompt có cấu trúc hơn
     prompt = f"Find images related to: '{translated_query}'. The scene may include: {expanded_query}."
-    
+
     return prompt
+
 
 async def translate_to_english(text):
     try:
@@ -126,46 +133,53 @@ async def translate_to_english(text):
     except Exception as e:
         print(f"Translation error: {str(e)}")
         return text
-    
+
+
 @app.get("/api/milvus/search")
 async def search_milvus_endpoint(
     search_query: Optional[str] = Query(None, description="Main search query"),
-    next_queries: Optional[List[str]] = Query(None, description="List of next scene queries"),
-    ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
+    next_queries: Optional[List[str]] = Query(
+        None, description="List of next scene queries"),
+    ocr_filter: Optional[str] = Query(
+        None, description="Optional OCR filter text"),
     obj_filters: Optional[List[str]] = Query(None),
     obj_position_filters: Optional[str] = None,
     ef_search: int = Query(100, description="HNSW ef_search parameter"),
     nprobe: int = Query(10, description="Number of probes for search"),
-    use_expanded_prompt: bool = Query(False, description="Whether to use expanded prompt")
+    use_expanded_prompt: bool = Query(
+        False, description="Whether to use expanded prompt")
 ):
     try:
         translated_query = await translate_to_english(search_query) if search_query else None
         print(f"Original query: {search_query}")
         print(f"Translated query: {translated_query}")
-        
+
         if use_expanded_prompt and translated_query:
             expanded_prompt = await expand_query(translated_query)
             print(f"Expanded prompt: {expanded_prompt}")
         else:
             expanded_prompt = translated_query
-        
+
         # Search with the main query
-        milvus_results, search_time = milvus_search.query(expanded_prompt, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
-        
+        milvus_results, search_time = milvus_search.query(
+            expanded_prompt, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
+
         # Process next queries
         if next_queries:
             for next_query in next_queries:
                 translated_next_query = await translate_to_english(next_query)
                 print(f"Next query: {translated_next_query}")
-                next_results, _ = milvus_search.query(translated_next_query, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
+                next_results, _ = milvus_search.query(
+                    translated_next_query, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
                 milvus_results.extend(next_results)  # Combine results
-        
+
         # Apply object filters if provided
         if obj_filters or obj_position_filters:
-            filtered_results = filter_results_by_objects(milvus_results, obj_filters, obj_position_filters)
+            filtered_results = filter_results_by_objects(
+                milvus_results, obj_filters, obj_position_filters)
         else:
             filtered_results = milvus_results
-        
+
         # Ensure all float values are JSON-compliant
         for result in filtered_results:
             for key, value in result.items():
@@ -174,7 +188,8 @@ async def search_milvus_endpoint(
                         result[key] = None
 
             # Add folder name to the result
-            result["folder"] = result.get('file_path').split('/')[0]  # Extract folder name
+            result["folder"] = result.get('file_path').split(
+                '/')[0]  # Extract folder name
 
         # Remove duplicates and increase score
         unique_results = {}
@@ -182,7 +197,8 @@ async def search_milvus_endpoint(
             file_path = result['file_path']
             if file_path in unique_results:
                 # If the file already exists, increase the score
-                unique_results[file_path]['similarity'] += result['similarity']  # Increase similarity score
+                # Increase similarity score
+                unique_results[file_path]['similarity'] += result['similarity']
             else:
                 # Otherwise, add the result to the unique results
                 unique_results[file_path] = result
@@ -191,20 +207,23 @@ async def search_milvus_endpoint(
         final_results = list(unique_results.values())
 
         # Sort results by combined score
-        sorted_results = sorted(final_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
+        sorted_results = sorted(final_results, key=lambda x: x.get(
+            'combined_score', 0), reverse=True)[:100]
 
         return JSONResponse(content={
-            "results": sorted_results, 
+            "results": sorted_results,
             "search_time": search_time,
             "original_query": search_query,
             "expanded_prompt": expanded_prompt if use_expanded_prompt else None,
             "translated_query": translated_query
         })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-    
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred: {str(e)}")
+
 # Initialize an additional model
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 
 def combine_results(clip_results, sbert_results, weights=(0.7, 0.3)):
     combined = {}
@@ -212,13 +231,16 @@ def combine_results(clip_results, sbert_results, weights=(0.7, 0.3)):
         if result['file_path'] not in combined:
             combined[result['file_path']] = result
             combined[result['file_path']]['combined_score'] = 0
-        
+
         if result in clip_results:
-            combined[result['file_path']]['combined_score'] += weights[0] * result['similarity']
+            combined[result['file_path']
+                     ]['combined_score'] += weights[0] * result['similarity']
         else:
-            combined[result['file_path']]['combined_score'] += weights[1] * result['similarity']
-    
+            combined[result['file_path']
+                     ]['combined_score'] += weights[1] * result['similarity']
+
     return sorted(combined.values(), key=lambda x: x['combined_score'], reverse=True)
+
 
 def filter_results_by_objects(results, obj_filters, obj_position_filters):
     file_paths = [result['file_path'] for result in results]
@@ -263,7 +285,8 @@ def filter_results_by_objects(results, obj_filters, obj_position_filters):
                         ('xmin' not in position_query or xmin >= position_query.get('xmin', {}).get('$gte', 0)) and
                         ('ymin' not in position_query or ymin >= position_query.get('ymin', {}).get('$gte', 0)) and
                         ('xmax' not in position_query or xmax <= position_query.get('xmax', {}).get('$lte', 1)) and
-                        ('ymax' not in position_query or ymax <= position_query.get('ymax', {}).get('$lte', 1))
+                        ('ymax' not in position_query or ymax <=
+                         position_query.get('ymax', {}).get('$lte', 1))
                     ):
                         filtered_results.append(result)
                         break
@@ -278,6 +301,7 @@ def filter_results_by_objects(results, obj_filters, obj_position_filters):
 
     return final_results
 
+
 @app.post("/api/milvus/search_by_image")
 async def search_milvus_by_image(
     image: UploadFile = File(...),
@@ -289,14 +313,16 @@ async def search_milvus_by_image(
         # Read the image content
         image_content = await image.read()
 
-        search_results, search_time = milvus_search.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
-        
+        search_results, search_time = milvus_search.search_by_image(
+            image_content, ocr_filter=ocr_filter, results=results)
+
         # Apply object filters if provided
         if obj_filters:
-            filtered_results = filter_results_by_objects(search_results, obj_filters, None)
+            filtered_results = filter_results_by_objects(
+                search_results, obj_filters, None)
         else:
             filtered_results = search_results
-        
+
         # Process the results to ensure JSON compliance
         processed_results = []
         for result in filtered_results:
@@ -310,10 +336,12 @@ async def search_milvus_by_image(
                 else:
                     processed_result[key] = value
             processed_results.append(processed_result)
-        
+
         return JSONResponse(content={"results": processed_results, "search_time": search_time})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred: {str(e)}")
+
 
 @app.post("/api/export-to-csv")
 async def export_to_csv(results: List[dict]):
@@ -323,8 +351,9 @@ async def export_to_csv(results: List[dict]):
             videos_id = result.get('VideosId', '')
             frame = result.get('frame', '')
             writer.writerow([videos_id, frame])
-    
+
     return FileResponse(tmpfile.name, media_type='text/csv', filename='query.csv')
+
 
 @app.get("/images/{filename}")
 async def serve_image(filename: str):
@@ -333,9 +362,11 @@ async def serve_image(filename: str):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
 
+
 @app.get("/api/search_similar")
 async def search_similar(
-    image_path: str = Query(..., description="Path of the image to search similar"),
+    image_path: str = Query(...,
+                            description="Path of the image to search similar"),
     ocr_filter: str = Query(None, description="Optional OCR filter text"),
     results: int = Query(100, description="Number of results to return")
 ):
@@ -349,7 +380,8 @@ async def search_similar(
         image_content = image_file.read()
 
     # Call the search_by_image method from milvus_search
-    search_results, search_time = milvus_search.search_by_image(image_content, ocr_filter=ocr_filter, results=results)
+    search_results, search_time = milvus_search.search_by_image(
+        image_content, ocr_filter=ocr_filter, results=results)
 
     if not isinstance(search_results, list):
         raise HTTPException(status_code=400, detail="Invalid search results")
@@ -358,7 +390,8 @@ async def search_similar(
     for idx, result in enumerate(search_results):
         image_data = {
             "id": idx + 1,
-            "VideosId": result.get('VideosId', ''),  # Assuming this field exists in the result
+            # Assuming this field exists in the result
+            "VideosId": result.get('VideosId', ''),
             "frame": result.get('frame', ''),
             "file_path": result.get('file_path', ''),
             "similarity": result.get('similarity', 0)
@@ -367,13 +400,16 @@ async def search_similar(
 
     return JSONResponse(content={"results": image_data_list, "search_time": search_time, "search_query": image_path})
 
+
 @app.get("/videos/{folder}/{filename}")
 async def serve_video(folder: str, filename: str):
-    file_path = os.path.join(base_path, folder, filename)  # Construct the full file path
+    # Construct the full file path
+    file_path = os.path.join(base_path, folder, filename)
     if not os.path.isfile(file_path):
-        print(f"File not found: {file_path}")  # Debugging line to check the file path
+        # Debugging line to check the file path
+        print(f"File not found: {file_path}")
         raise HTTPException(status_code=404, detail="Video not found")
-    
+
     response = FileResponse(file_path)
     response.headers["Accept-Ranges"] = "bytes"  # Thêm header Accept-Ranges
     return response

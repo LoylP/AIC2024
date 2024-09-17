@@ -80,12 +80,13 @@ def encode_text(text):
     return encoded_text.tolist()
 
 
-def query(query_text=None, ocr_filter=None, limit=300, ef_search=200, nprobe=10):
+def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_search=200, nprobe=10):
     start_time = time.time()
     results = []
+    next_results = []  # Store results from next_queries
 
     if query_text:
-        # Perform Milvus search
+        # Perform Milvus search for the main query
         query_embedding = encode_text(query_text)
         query_embedding = torch.tensor(query_embedding).to('cpu').numpy()
         
@@ -105,18 +106,60 @@ def query(query_text=None, ocr_filter=None, limit=300, ef_search=200, nprobe=10)
             output_fields=["id", "VideosId", "frame", "file_path"]
         )
         
-        for result in milvus_results:
-            for hit in result:
+        for hit in milvus_results:
+            for result in hit:
                 results.append({
-                    "id": hit.entity.get("id"),
-                    "VideosId": hit.entity.get("VideosId").split("/")[-1] if hit.entity.get("VideosId") else None,
-                    "frame": hit.entity.get("frame"),
-                    "file_path": hit.entity.get("file_path"),
-                    "similarity": hit.distance,
+                    "id": result.entity.get("id"),
+                    "VideosId": result.entity.get("VideosId").split("/")[-1] if result.entity.get("VideosId") else None,
+                    "frame": result.entity.get("frame"),
+                    "file_path": result.entity.get("file_path"),
+                    "similarity": result.distance,
+                    "source": "main"  # Mark as main query result
                 })
+    
+    # Handle next_queries
+    if next_queries:
+        for next_query in next_queries:
+            next_query_embedding = encode_text(next_query)
+            next_query_embedding = torch.tensor(next_query_embedding).to('cpu').numpy()
+            
+            next_milvus_results = collection.search(
+                [next_query_embedding],
+                "embedding",
+                search_params,
+                limit=limit,
+                output_fields=["id", "VideosId", "frame", "file_path"]
+            )
+            for hit in next_milvus_results:
+                for result in hit:
+                    next_results.append({
+                        "id": result.entity.get("id"),
+                        "VideosId": result.entity.get("VideosId").split("/")[-1] if result.entity.get("VideosId") else None,
+                        "frame": result.entity.get("frame"),
+                        "file_path": result.entity.get("file_path"),
+                        "similarity": result.distance,
+                        "source": "next"  # Mark as next query result
+                    })
 
-    if ocr_filter:
-        # Perform OpenSearch search for OCR
+    combined_results = {}
+
+    # Add all results from the main query
+    for result in results:
+        combined_results[result['file_path']] = result
+
+    # Add or update results from the next queries
+    for next_result in next_results:
+        file_path = next_result['file_path']
+        if file_path in combined_results:
+            # If file exists in both, increase the score and update similarity if needed
+            combined_results[file_path]['similarity'] = min(combined_results[file_path]['similarity'], next_result['similarity'])
+            combined_results[file_path]['combined_score'] = combined_results[file_path].get('combined_score', 1) + 0.5
+        else:
+            # If the file only exists in next query, add it
+            combined_results[file_path] = next_result
+
+    # Apply OCR filtering if provided
+    if ocr_filter and not next_queries:
         es_query = {
             "query": {
                 "match": {
@@ -126,21 +169,18 @@ def query(query_text=None, ocr_filter=None, limit=300, ef_search=200, nprobe=10)
             "size": limit  # Use the same limit as Milvus search
         }
         es_results = client.search(index="ocr", body=es_query)
-        
+
         for hit in es_results['hits']['hits']:
             file_path = hit['_source']['path']
             ocr_text = hit['_source']['text']
-            
-            # Check if this file_path already exists in results
-            existing_result = next((item for item in results if item["file_path"] == file_path), None)
-            
-            if existing_result:
-                # If it exists, update the OCR score and text
-                existing_result["ocr_score"] = hit['_score']
-                existing_result["ocr_text"] = ocr_text
+
+            # If the file exists in combined results, update OCR data
+            if file_path in combined_results:
+                combined_results[file_path]['ocr_text'] = ocr_text
+                combined_results[file_path]['ocr_score'] = hit['_score']
             else:
-                # If it doesn't exist, add a new entry
-                results.append({
+                # If not found, add as a new result
+                combined_results[file_path] = {
                     "id": hit['_id'],
                     "VideosId": file_path.split("/")[-2] if file_path else None,
                     "frame": file_path.split("/")[-1] if file_path else None,
@@ -148,32 +188,30 @@ def query(query_text=None, ocr_filter=None, limit=300, ef_search=200, nprobe=10)
                     "ocr_text": ocr_text,
                     "ocr_score": hit['_score'],
                     "similarity": float('inf')  # Set to infinity as we don't have a similarity score
-                })
+                }
 
     # Calculate combined score
-    for result in results:
-        if query_text and ocr_filter:
-            query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
-            ocr_score = result.get('ocr_score', 0) / 10
-            result['combined_score'] = (query_score*0.7 + ocr_score*0.3)
-        elif query_text:
-            result['combined_score'] = 1 / (1 + result['similarity'])
-        elif ocr_filter:
-            result['combined_score'] = result.get('ocr_score', 0)
+    for result in combined_results.values():
+        query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
+        if 'ocr_score' in result:
+            ocr_score = result['ocr_score'] / 10
+            result['combined_score'] = (query_score * 0.7 + ocr_score * 0.3)
         else:
-            result['combined_score'] = 0
+            result['combined_score'] = query_score
 
-    # Ensure all float values are JSON-compliant
-    for result in results:
+        if result.get("source") == "next":
+            result['combined_score'] += 0.5
+
+    for result in combined_results.values():
         for key, value in result.items():
             if isinstance(value, float):
                 if math.isnan(value) or math.isinf(value):
-                    result[key] = None  # or use a default value like 0
+                    result[key] = None
 
-    # Sort by combined score and take top 'limit' results
-    results = sorted(results, key=lambda x: x.get('combined_score', 0), reverse=True)[:limit]
+    # Sort results by combined score and take top 'limit' results
+    final_results = sorted(combined_results.values(), key=lambda x: x.get('combined_score', 0), reverse=True)[:limit]
 
-    return results, time.time() - start_time
+    return final_results, time.time() - start_time
 
 
 def get_all_data():

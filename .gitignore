@@ -5,3 +5,4 @@ __pycache__/
 
 ./frontend/node_modules/
 static/keyframes_preprocess
+static/Video

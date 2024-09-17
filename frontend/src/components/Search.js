@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Select, Input, Button, message } from "antd";
 import "./Search.css";
+import Video from './Video'; // Import the Video component
 
 const { Panel } = Collapse;
 const { Option } = Select;
@@ -8,6 +9,7 @@ const { Option } = Select;
 const Search = () => {
 	const [inputType, setInputType] = useState("text");
 	const [searchValue, setSearchValue] = useState("");
+	const [nextQueries, setNextQueries] = useState([""]); // New state for next queries
 	const [results, setResults] = useState([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [ocrDescription, setOcrDescription] = useState("");
@@ -16,21 +18,32 @@ const Search = () => {
 	const [showModal, setShowModal] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [objectFilters, setObjectFilters] = useState([{ class: "", value: "" }]);
-	const [classes, setClasses] = useState([]); // New state for class options
+	const [classes, setClasses] = useState([]);
 	const modalRef = useRef(null);
-	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false); // New state for using expanded prompt
+	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false);
+	const [isOcrDisabled, setIsOcrDisabled] = useState(false); // New state to control OCR input
+	const [showVideo, setShowVideo] = useState(false); // New state to control video visibility
 
-	const itemsPerPage = 20;
+	const itemsPerPage = 25;
 
 	const indexOfLastItem = currentPage * itemsPerPage;
 	const indexOfFirstItem = indexOfLastItem - itemsPerPage;
 	const currentItems = Array.isArray(results) ? results.slice(indexOfFirstItem, indexOfLastItem) : [];
 
+	//Show video
+	const videoRef = useRef(null);
+	const [time, setTime] = useState("");
+
+	const handleSeek = () => {
+		if (videoRef.current) {
+			videoRef.current.currentTime = parseFloat(time)/25; 
+		}
+	};
+	
 	useEffect(() => {
-		// Fetch class options from unique_classes.json
 		const fetchClasses = async () => {
 			try {
-				const response = await fetch("http://localhost:8000/api/get-all-objects/"); // Update with the correct path
+				const response = await fetch("http://localhost:8000/api/get-all-objects/");
 				const data = await response.json();
 				setClasses(data);
 			} catch (error) {
@@ -40,15 +53,35 @@ const Search = () => {
 
 		fetchClasses();
 	}, []);
+
 	const handleInputChange = (e) => {
 		setSearchValue(e.target.value);
+	};
+
+	const handleNextQueryChange = (index, value) => {
+		const newNextQueries = [...nextQueries];
+		newNextQueries[index] = value;
+		setNextQueries(newNextQueries);
+		setIsOcrDisabled(newNextQueries.some(q => q) || !value); // Disable OCR input if any next query is present or if the current next query is empty
+
+		// Clear OCR description if any next query is entered
+		if (value) {
+			setOcrDescription(""); // Clear OCR description
+		}
+	};
+
+	const addNextQuery = () => {
+		setNextQueries([...nextQueries, ""]); // Add a new empty query
+	};
+
+	const removeNextQuery = (index) => {
+		setNextQueries(nextQueries.filter((_, i) => i !== index));
 	};
 
 	const handleButtonSearch = async () => {
 		setIsLoading(true);
 		try {
 			let response;
-			// Construct the obj_filters parameter
 			const objFiltersString = objectFilters
 				.filter((filter) => filter.class && filter.value)
 				.map((filter) => `${filter.class}=${filter.value}`)
@@ -65,10 +98,18 @@ const Search = () => {
 				if (objFiltersString) {
 					url.searchParams.append("obj_filters", objFiltersString);
 				}
-				url.searchParams.append("use_expanded_prompt", useExpandedPrompt); // New line
+				url.searchParams.append("use_expanded_prompt", useExpandedPrompt);
 
-				// Perform search even if only OCR filter is provided
-				if (searchValue || ocrDescription || objFiltersString) {
+				// Add next queries to the URL
+				if (nextQueries.length > 0) {
+					nextQueries.forEach((nextQuery) => {
+						if (nextQuery) {
+							url.searchParams.append("next_queries", nextQuery);
+						}
+					});
+				}
+
+				if (searchValue || ocrDescription || objFiltersString || nextQueries.some(q => q)) {
 					response = await fetch(url);
 				} else {
 					throw new Error("Please provide at least one search criteria");
@@ -128,6 +169,7 @@ const Search = () => {
 	const handleImageClick = (image) => {
 		setSelectedImage(image);
 		setShowModal(true);
+		setShowVideo(false); // Hide video when selecting a new image
 	};
 
 	const handleCloseModal = () => {
@@ -176,6 +218,7 @@ const Search = () => {
 		setSelectedFile(null);
 		setSelectedImage(null);
 		setObjectFilters([{ class: "", value: "" }]);
+		setNextQueries([""]); // Reset next queries
 	};
 
 	const addObjectFilter = () => {
@@ -240,6 +283,13 @@ const Search = () => {
 		}
 	};
 
+	// Add a button to close all next queries
+	const closeAllNextQueries = () => {
+		setNextQueries([""]); // Reset next queries
+		setOcrDescription(""); // Clear OCR description
+		setIsOcrDisabled(false); // Enable OCR input when closing all next queries
+	};
+
 	return (
 		<div>
 			<div className="flex flex-col h-screen">
@@ -292,7 +342,27 @@ const Search = () => {
 								className="mr-2"
 							/>
 							<label>Use Expanded Prompt</label>
-							</div>
+						</div>
+						{/* Next Queries Section */}
+						<div className="mb-4">
+							<h3 className="text-lg font-bold">Next Queries</h3>
+							{nextQueries.map((nextQuery, index) => (
+								<div key={index} className="flex items-center mb-2">
+									<Input
+										className="mr-2"
+										placeholder={`Next Query ${index + 1}`}
+										value={nextQuery}
+										onChange={(e) => handleNextQueryChange(index, e.target.value)}
+									/>
+									<Button onClick={() => removeNextQuery(index)} type="danger">
+										Remove
+									</Button>
+								</div>
+							))}
+							<Button onClick={addNextQuery} type="dashed" style={{ width: "100%" }}>
+								Add Next Query
+							</Button>
+						</div>
 						<button
 							onClick={handleButtonSearch}
 							disabled={inputType === "text" ? (!searchValue && !ocrDescription && objectFilters.every(f => !f.class && !f.value)) : !selectedFile}
@@ -301,12 +371,17 @@ const Search = () => {
 						</button>
 						<Collapse defaultActiveKey={["1", "2"]} style={{ padding: 10, marginTop: 30 }}>
 							<Panel header="OCR Filter" key="1" style={{ fontSize: 20, fontWeight: 500 }}>
+								{/* New button to close all next queries */}
+								<Button onClick={closeAllNextQueries} type="danger" className="mb-2">
+									Close All Next Queries
+								</Button>
 								<textarea
 									placeholder="Enter OCR description"
 									value={ocrDescription}
 									onChange={(e) => setOcrDescription(e.target.value)}
 									className="mb-4 p-2 border rounded resize-none text-black"
 									id="ocr-textarea"
+									disabled={isOcrDisabled} // Disable OCR input based on state
 								/>
 							</Panel>
 							<Panel header="Object Filter" key="2" style={{ fontSize: 20, fontWeight: 500 }}>
@@ -416,11 +491,30 @@ const Search = () => {
 								&times;
 							</button>
 						</div>
-						<img
-							src={`http://127.0.0.1:8000/images/${selectedImage.file_path}`}
-							alt={selectedImage.file_path}
+						{/* Image display */}
+						{showVideo ? (
+							<video
+							ref={videoRef}
 							className="w-full mb-4 rounded"
-						/>
+							controls
+							preload="auto"
+							muted
+							crossOrigin="anonymous"
+							autoPlay
+							onLoadedMetadata={() => {
+								videoRef.current.currentTime = selectedImage.frame/25; // Set default time to 10 seconds
+							}}
+						>
+							<source src={`http://localhost:8000/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
+							Your browser does not support the video tag.
+						</video>
+						) : (
+							<img
+								src={`http://127.0.0.1:8000/images/${selectedImage.file_path}`}
+								alt={selectedImage.file_path}
+								className="w-full mb-4 rounded"
+							/>
+						)}
 						<p className="mb-2 text-black">
 							<strong>Frame:</strong> {selectedImage.frame}
 						</p>
@@ -435,6 +529,21 @@ const Search = () => {
 							className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
 							Search Similar Images
 						</button>
+						<button
+							onClick={() => setShowVideo(!showVideo)} 
+							className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 ml-2">
+							{showVideo ? "Show Frame" : "Show Video"}
+						</button>
+						<input
+							type="text"
+							value={time}
+							onChange={(e) => setTime(e.target.value)} 
+							placeholder="Enter frame"
+							className="bg-white-500 text-black px-4 py-2 rounded"
+						/>
+						<button onClick={handleSeek} className="bg-amber-500 text-white px-4 py-2 rounded hover:bg-amber-600 ml-2">
+							Move
+						</button>
 					</div>
 				</div>
 			)}
@@ -443,3 +552,4 @@ const Search = () => {
 };
 
 export default Search;
+					

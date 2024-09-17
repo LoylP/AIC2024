@@ -39,6 +39,7 @@ app.add_middleware(
 )
 
 path_midas = "/home/nguyenhoangphuc-22521129/AIC2024/static/keyframes_preprocess"
+base_path = "/home/nguyenhoangphuc-22521129/AIC2024/static/Video"
 app.mount("/images", StaticFiles(directory=path_midas), name="images")
 
 # Replace Elasticsearch client initialization with OpenSearch
@@ -118,9 +119,18 @@ async def expand_query(translated_query):
     
     return prompt
 
+async def translate_to_english(text):
+    try:
+        translation = translator.translate(text, dest='en', src='auto')
+        return translation.text if translation else text
+    except Exception as e:
+        print(f"Translation error: {str(e)}")
+        return text
+    
 @app.get("/api/milvus/search")
 async def search_milvus_endpoint(
     search_query: Optional[str] = Query(None, description="Main search query"),
+    next_queries: Optional[List[str]] = Query(None, description="List of next scene queries"),
     ocr_filter: Optional[str] = Query(None, description="Optional OCR filter text"),
     obj_filters: Optional[List[str]] = Query(None),
     obj_position_filters: Optional[str] = None,
@@ -134,14 +144,21 @@ async def search_milvus_endpoint(
         print(f"Translated query: {translated_query}")
         
         if use_expanded_prompt and translated_query:
-            # Tạo prompt mở rộng từ truy vấn đã dịch
             expanded_prompt = await expand_query(translated_query)
             print(f"Expanded prompt: {expanded_prompt}")
         else:
             expanded_prompt = translated_query
         
-        # Sử dụng truy vấn đã dịch hoặc mở rộng để tìm kiếm
+        # Search with the main query
         milvus_results, search_time = milvus_search.query(expanded_prompt, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
+        
+        # Process next queries
+        if next_queries:
+            for next_query in next_queries:
+                translated_next_query = await translate_to_english(next_query)
+                print(f"Next query: {translated_next_query}")
+                next_results, _ = milvus_search.query(translated_next_query, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
+                milvus_results.extend(next_results)  # Combine results
         
         # Apply object filters if provided
         if obj_filters or obj_position_filters:
@@ -156,8 +173,25 @@ async def search_milvus_endpoint(
                     if math.isnan(value) or math.isinf(value):
                         result[key] = None
 
-        # Sort results by combined score (already calculated in search_milvus.py)
-        sorted_results = sorted(filtered_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
+            # Add folder name to the result
+            result["folder"] = result.get('file_path').split('/')[0]  # Extract folder name
+
+        # Remove duplicates and increase score
+        unique_results = {}
+        for result in filtered_results:
+            file_path = result['file_path']
+            if file_path in unique_results:
+                # If the file already exists, increase the score
+                unique_results[file_path]['similarity'] += result['similarity']  # Increase similarity score
+            else:
+                # Otherwise, add the result to the unique results
+                unique_results[file_path] = result
+
+        # Convert back to list
+        final_results = list(unique_results.values())
+
+        # Sort results by combined score
+        sorted_results = sorted(final_results, key=lambda x: x.get('combined_score', 0), reverse=True)[:100]
 
         return JSONResponse(content={
             "results": sorted_results, 
@@ -333,15 +367,17 @@ async def search_similar(
 
     return JSONResponse(content={"results": image_data_list, "search_time": search_time, "search_query": image_path})
 
+@app.get("/videos/{folder}/{filename}")
+async def serve_video(folder: str, filename: str):
+    file_path = os.path.join(base_path, folder, filename)  # Construct the full file path
+    if not os.path.isfile(file_path):
+        print(f"File not found: {file_path}")  # Debugging line to check the file path
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    response = FileResponse(file_path)
+    response.headers["Accept-Ranges"] = "bytes"  # Thêm header Accept-Ranges
+    return response
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-async def translate_to_english(text):
-    try:
-        loop = asyncio.get_event_loop()
-        translation = await loop.run_in_executor(None, translator.translate, text, 'en', 'auto')
-        return translation.text
-    except Exception as e:
-        print(f"Translation error: {str(e)}")
-        return text  # Return original text if translation fails

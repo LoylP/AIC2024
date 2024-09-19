@@ -268,3 +268,7 @@ pymilvus==2.4.6
 faiss-cpu 
 open_clip_torch
 elasticsearch==8.15.1
+boto3
+aiohttp
+googletrans
+nltk

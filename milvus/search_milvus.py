@@ -15,6 +15,7 @@ from requests_aws4auth import AWS4Auth
 import boto3
 import math
 from torch.cuda.amp import autocast  # Import autocast for mixed precision
+import concurrent.futures
 
 load_dotenv()
 
@@ -84,6 +85,23 @@ def frame_to_timestamp(frame, fps=25):
     return frame / fps  # Chuyển đổi frame thành thời gian (giây)
 
 
+def calculate_dynamic_threshold(next_queries, combined_results):
+    time_differences = []
+    
+    for next_query in next_queries:
+        # Lấy frame từ next_query và combined_results để tính toán thời gian
+        next_frame_time = frame_to_timestamp(next_query['frame'])
+        if next_query['file_path'] in combined_results:
+            main_frame_time = frame_to_timestamp(combined_results[next_query['file_path']]['frame'])
+            time_diff = abs(next_frame_time - main_frame_time)
+            time_differences.append(time_diff)
+
+    if time_differences:
+        average_time_diff = sum(time_differences) / len(time_differences)
+        return average_time_diff * 1.5  # Tăng thêm 50% để tạo độ linh hoạt
+    return 10  # Giá trị mặc định nếu không có next_queries
+
+
 def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_search=200, nprobe=10):
     start_time = time.time()
     results = []
@@ -121,29 +139,38 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     "source": "main"  # Mark as main query result
                 })
 
-    # Handle next_queries
-    if next_queries:
-        for next_query in next_queries:
-            next_query_embedding = encode_text(next_query)
-            next_query_embedding = torch.tensor(next_query_embedding).to('cpu').numpy()
+    # Define a function to handle the search for next_queries
+    def search_next_query(next_query):
+        next_query_embedding = encode_text(next_query)
+        next_query_embedding = torch.tensor(next_query_embedding).to('cpu').numpy()
 
-            next_milvus_results = collection.search(
-                [next_query_embedding],
-                "embedding",
-                search_params,
-                limit=limit,
-                output_fields=["id", "VideosId", "frame", "file_path"]
-            )
-            for hit in next_milvus_results:
-                for result in hit:
-                    next_results.append({
-                        "id": result.entity.get("id"),
-                        "VideosId": result.entity.get("VideosId").split("/")[-1] if result.entity.get("VideosId") else None,
-                        "frame": result.entity.get("frame"),
-                        "file_path": result.entity.get("file_path"),
-                        "similarity": result.distance,
-                        "source": "next"  # Mark as next query result
-                    })
+        next_milvus_results = collection.search(
+            [next_query_embedding],
+            "embedding",
+            search_params,
+            limit=limit,
+            output_fields=["id", "VideosId", "frame", "file_path"]
+        )
+        
+        next_results = []
+        for hit in next_milvus_results:
+            for result in hit:
+                next_results.append({
+                    "id": result.entity.get("id"),
+                    "VideosId": result.entity.get("VideosId").split("/")[-1] if result.entity.get("VideosId") else None,
+                    "frame": result.entity.get("frame"),
+                    "file_path": result.entity.get("file_path"),
+                    "similarity": result.distance,
+                    "source": "next"  # Mark as next query result
+                })
+        return next_results
+
+    # Handle next_queries in parallel
+    if next_queries:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_query = {executor.submit(search_next_query, next_query): next_query for next_query in next_queries}
+            for future in concurrent.futures.as_completed(future_to_query):
+                next_results.extend(future.result())
 
     combined_results = {}
 
@@ -154,27 +181,25 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
     # Add or update results from the next queries
     for next_result in next_results:
         file_path = next_result['file_path']
+        next_frame_time = frame_to_timestamp(next_result['frame'])
+
         if file_path in combined_results:
-            # If file exists in both, increase the score and update similarity if needed
-            combined_results[file_path]['similarity'] = min(combined_results[file_path]['similarity'], next_result['similarity'])
-            combined_results[file_path]['combined_score'] = combined_results[file_path].get('combined_score', 1) + 0.5
-            
-            # Tính toán khoảng cách thời gian chỉ nếu cùng thư mục
+            main_frame_time = frame_to_timestamp(combined_results[file_path]['frame'])
+            time_difference = abs(next_frame_time - main_frame_time)
+
+            # Kiểm tra cùng thư mục
             if combined_results[file_path]['file_path'].split('/')[1] == next_result['file_path'].split('/')[1]:
-                time_difference_weight = 0.1  # Weight for time difference
-                threshold_time = 10  # Maximum time difference (seconds) to prioritize
-                next_frame_time = frame_to_timestamp(next_result['frame'])
-                main_frame_time = frame_to_timestamp(combined_results[file_path]['frame'])
-                time_difference = abs(next_frame_time - main_frame_time)
-                
+                threshold_time = calculate_dynamic_threshold(next_queries, combined_results)
+
                 if time_difference < threshold_time:
-                    combined_results[file_path]['similarity'] *= (1 - time_difference_weight)
-            
-            combined_results[file_path]['similarity'] *= 0.85
+                    combined_results[file_path]['combined_score'] += 0.2  # Tăng điểm cho thời gian
+                else:
+                    relevance_factor = 0.8 if next_result['similarity'] < 0.5 else 0.9
+                    combined_results[file_path]['combined_score'] *= relevance_factor
 
         else:
             combined_results[file_path] = next_result
-            combined_results[file_path]['similarity'] *= 0.85
+            combined_results[file_path]['similarity'] *= 0.85  # Giảm trọng số cho kết quả mới
 
     # Apply OCR filtering if provided and there are no next_queries
     if ocr_filter and not next_queries:
@@ -308,6 +333,7 @@ def search_by_image(image_content, ocr_filter=None, results=100):
                 "frame": hit.entity.get("frame"),
                 "file_path": hit.entity.get("file_path"),
                 "similarity": similarity,
+                "folder": hit.entity.get("file_path").split('/')[0]
             }
 
             # Only fetch OCR text if ocr_filter is provided

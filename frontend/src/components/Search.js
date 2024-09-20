@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Select, Input, Button, message } from "antd";
 import "./Search.css";
 
+
+const API_BASE_URL = "http://127.0.0.1:8000"
+
 const { Panel } = Collapse;
 const { Option } = Select;
 
@@ -43,7 +46,7 @@ const Search = () => {
 	useEffect(() => {
 		const fetchClasses = async () => {
 			try {
-				const response = await fetch("http://localhost:8000/api/get-all-objects/");
+				const response = await fetch(`${API_BASE_URL}/api/get-all-objects/`); // Sử dụng biến môi trường
 				const data = await response.json();
 				setClasses(data);
 			} catch (error) {
@@ -88,7 +91,7 @@ const Search = () => {
 				.join(",");
 
 			if (inputType === "text") {
-				const url = new URL("http://127.0.0.1:8000/api/milvus/search");
+				const url = new URL(`${API_BASE_URL}/api/milvus/search`); // Sử dụng biến môi trường
 				if (searchValue) {
 					url.searchParams.append("search_query", searchValue);
 				}
@@ -118,7 +121,7 @@ const Search = () => {
 				const formData = new FormData();
 				formData.append("image", selectedFile);
 
-				const url = new URL("http://127.0.0.1:8000/api/milvus/search_by_image");
+				const url = new URL(`${API_BASE_URL}/api/milvus/search_by_image`); // Sử dụng biến môi trường
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
 				}
@@ -178,7 +181,7 @@ const Search = () => {
 	const fetchSurroundingImages = async (imagePath) => {
 		setIsLoading(true);
 		try {
-			const response = await fetch(`http://127.0.0.1:8000/api/serve-images-around?filename=${encodeURIComponent(imagePath)}`);
+			const response = await fetch(`${API_BASE_URL}/api/serve-images-around?filename=${encodeURIComponent(imagePath)}`); // Sử dụng biến môi trường
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
@@ -205,9 +208,7 @@ const Search = () => {
 		if (selectedImage) {
 			setIsLoading(true);
 			try {
-				const imageUrl = `http://127.0.0.1:8000/images/${selectedImage.file_path}`;
-				
-				const response = await fetch(`http://127.0.0.1:8000/api/search_similar?image_path=${encodeURIComponent(selectedImage.file_path)}&ocr_filter=${ocrDescription}&results=100`, {
+				const response = await fetch(`${API_BASE_URL}/api/search_similar?image_path=${encodeURIComponent(selectedImage.file_path)}&ocr_filter=${ocrDescription}&results=100`, {
 					method: "GET",
 				});
 
@@ -279,7 +280,7 @@ const Search = () => {
 		}
 
 		try {
-			const response = await fetch("http://127.0.0.1:8000/api/export-to-csv", {
+			const response = await fetch(`${API_BASE_URL}/api/export-to-csv`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -486,7 +487,7 @@ const Search = () => {
 												onClick={() => handleImageClick(image)}>
 												<img
 													className="w-full h-40 object-cover rounded shadow-md"
-													src={`http://127.0.0.1:8000/images/${image.file_path}`}
+													src={`${API_BASE_URL}/images/${image.file_path}`}
 													alt={image.file}
 												/>
 												<div className="absolute inset-0 flex flex-col justify-end p-2">
@@ -526,12 +527,12 @@ const Search = () => {
 									videoRef.current.currentTime = selectedImage.frame / 25; // Set default time to 10 seconds
 								}}
 							>
-								<source src={`http://localhost:8000/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
+								<source src={`${API_BASE_URL}/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
 								Your browser does not support the video tag.
 							</video>
 						) : (
 							<img
-								src={`http://127.0.0.1:8000/images/${selectedImage.file_path}`}
+								src={`${API_BASE_URL}/images/${selectedImage.file_path}`}
 								alt={selectedImage.file_path}
 								className="w-full mb-4 rounded"
 							/>
@@ -574,7 +575,7 @@ const Search = () => {
 							{surroundingImages.map((img, index) => (
 								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, file_path: img })}> {/* Update selected image on click */}
 									<img
-										src={`http://127.0.0.1:8000/images/${img}`}
+										src={`${API_BASE_URL}/images/${img}`}
 										alt={`Surrounding ${index + 1}`}
 										className="object-cover rounded cursor-pointer"
 									/>

@@ -15,6 +15,8 @@ from requests_aws4auth import AWS4Auth
 import boto3
 import math
 from torch.cuda.amp import autocast  # Import autocast for mixed precision
+from transformers import BeitFeatureExtractor, BeitModel, XLMRobertaTokenizer, AutoModel
+
 
 load_dotenv()
 
@@ -30,14 +32,8 @@ connections.connect(
 )
 
 # Define the schema for Milvus collection
-collection_name = "image_embeddings_h14"
+collection_name = "image_embeddings_beit3_coco_base"
 collection = Collection(name=collection_name)
-
-# Load CLIP and SentenceTransformer models
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-clip_model, _, preprocess = open_clip.create_model_and_transforms(
-    'ViT-H/14-quickgelu', pretrained='dfn5b')
-clip_model.to(device)
 
 # Replace Elasticsearch client initialization with OpenSearch
 region = os.getenv('AWS_REGION')
@@ -66,18 +62,73 @@ client = OpenSearch(
     max_retries=5,
     retry_on_timeout=True
 )
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Load CLIP
+# clip_model, _, preprocess = open_clip.create_model_and_transforms(
+#    'ViT-H/14-quickgelu', pretrained='dfn5b')
+# clip_model.to(device)
+
+# def encode_text(text):
+#     text_tokens = tokenizer.tokenize(text).to(device)
+#     with torch.no_grad():
+#         with autocast():  # Enable mixed precision
+#             text_features = clip_model.encode_text(text_tokens).float()
+
+#     # Convert the tensor to a numpy array and flatten it
+#     encoded_text = text_features.cpu().numpy().flatten()
+
+#     return encoded_text.tolist()
+
+
+# def encode_image(image_content):
+#     image = Image.open(io.BytesIO(image_content)).convert('RGB')
+#     image_input = preprocess(image).unsqueeze(0).to(device)
+#     with torch.no_grad():
+#         with autocast():  # Enable mixed precision
+#             image_features = clip_model.encode_image(image_input).float()
+
+#     # Convert the tensor to a numpy array and flatten it
+#     encoded_image = image_features.cpu().numpy().flatten()
+
+#     return encoded_image.tolist()
+
+# Load BEIT3 model and tokenizer
+beit_model = BeitModel.from_pretrained(
+    'microsoft/beit-base-patch16-224-pt22k-ft22k').to(device)
+beit_model.eval()
+feature_extractor = BeitFeatureExtractor.from_pretrained(
+    'microsoft/beit-base-patch16-224-pt22k-ft22k')
+
+# Load the XLMRoberta tokenizer for BEiT-3
+text_tokenizer = XLMRobertaTokenizer(
+    "F:\\AI Challenge\\AIC2024\\AIC2024\\static\\beit3.spm")
+
+# Load a text model
+text_model = AutoModel.from_pretrained('bert-base-uncased').to(device)
 
 
 def encode_text(text):
-    text_tokens = tokenizer.tokenize(text).to(device)
+    tokens = text_tokenizer(text, return_tensors="pt",
+                            padding=True, truncation=True).to(device)
     with torch.no_grad():
         with autocast():  # Enable mixed precision
-            text_features = clip_model.encode_text(text_tokens).float()
-
-    # Convert the tensor to a numpy array and flatten it
+            # Extract the [CLS] token embedding
+            text_features = text_model(
+                **tokens).last_hidden_state[:, 0, :].float()
     encoded_text = text_features.cpu().numpy().flatten()
-
     return encoded_text.tolist()
+
+
+def encode_image(image_content):
+    image = Image.open(io.BytesIO(image_content)).convert('RGB')
+    inputs = feature_extractor(images=image, return_tensors="pt").to(device)
+    with torch.no_grad():
+        with autocast():  # Enable mixed precision
+            # Take the mean of all patches
+            image_features = beit_model(
+                **inputs).last_hidden_state.mean(dim=1).float()
+    encoded_image = image_features.cpu().numpy().flatten()
+    return encoded_image.tolist()
 
 
 def frame_to_timestamp(frame, fps=25):
@@ -125,7 +176,8 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
     if next_queries:
         for next_query in next_queries:
             next_query_embedding = encode_text(next_query)
-            next_query_embedding = torch.tensor(next_query_embedding).to('cpu').numpy()
+            next_query_embedding = torch.tensor(
+                next_query_embedding).to('cpu').numpy()
 
             next_milvus_results = collection.search(
                 [next_query_embedding],
@@ -156,20 +208,25 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
         file_path = next_result['file_path']
         if file_path in combined_results:
             # If file exists in both, increase the score and update similarity if needed
-            combined_results[file_path]['similarity'] = min(combined_results[file_path]['similarity'], next_result['similarity'])
-            combined_results[file_path]['combined_score'] = combined_results[file_path].get('combined_score', 1) + 0.5
-            
+            combined_results[file_path]['similarity'] = min(
+                combined_results[file_path]['similarity'], next_result['similarity'])
+            combined_results[file_path]['combined_score'] = combined_results[file_path].get(
+                'combined_score', 1) + 0.5
+
             # Tính toán khoảng cách thời gian chỉ nếu cùng thư mục
             if combined_results[file_path]['file_path'].split('/')[1] == next_result['file_path'].split('/')[1]:
                 time_difference_weight = 0.1  # Weight for time difference
-                threshold_time = 10  # Maximum time difference (seconds) to prioritize
+                # Maximum time difference (seconds) to prioritize
+                threshold_time = 10
                 next_frame_time = frame_to_timestamp(next_result['frame'])
-                main_frame_time = frame_to_timestamp(combined_results[file_path]['frame'])
+                main_frame_time = frame_to_timestamp(
+                    combined_results[file_path]['frame'])
                 time_difference = abs(next_frame_time - main_frame_time)
-                
+
                 if time_difference < threshold_time:
-                    combined_results[file_path]['similarity'] *= (1 - time_difference_weight)
-            
+                    combined_results[file_path]['similarity'] *= (
+                        1 - time_difference_weight)
+
             combined_results[file_path]['similarity'] *= 0.85
 
         else:
@@ -205,12 +262,15 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     "file_path": file_path,
                     "ocr_text": ocr_text,
                     "ocr_score": hit['_score'],
-                    "similarity": float('inf')  # Set to infinity as we don't have a similarity score
+                    # Set to infinity as we don't have a similarity score
+                    "similarity": float('inf')
                 }
 
     # Calculate combined score
     for result in combined_results.values():
-        query_score = 1 / (1 + result['similarity']) if result['similarity'] != float('inf') else 0
+        query_score = 1 / \
+            (1 + result['similarity']
+             ) if result['similarity'] != float('inf') else 0
         if 'ocr_score' in result:
             ocr_score = result['ocr_score'] / 10
             result['combined_score'] = (query_score * 0.7 + ocr_score * 0.3)
@@ -228,7 +288,8 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     result[key] = None
 
     # Sort results by combined score and take top 'limit' results
-    final_results = sorted(combined_results.values(), key=lambda x: x.get('combined_score', 0), reverse=True)[:limit]
+    final_results = sorted(combined_results.values(), key=lambda x: x.get(
+        'combined_score', 0), reverse=True)[:limit]
 
     return final_results, time.time() - start_time
 
@@ -253,19 +314,6 @@ def get_all_data():
     except Exception as e:
         print(f"Error retrieving data from Milvus: {str(e)}")
         return []
-
-
-def encode_image(image_content):
-    image = Image.open(io.BytesIO(image_content)).convert('RGB')
-    image_input = preprocess(image).unsqueeze(0).to(device)
-    with torch.no_grad():
-        with autocast():  # Enable mixed precision
-            image_features = clip_model.encode_image(image_input).float()
-
-    # Convert the tensor to a numpy array and flatten it
-    encoded_image = image_features.cpu().numpy().flatten()
-
-    return encoded_image.tolist()
 
 
 def search_by_image(image_content, ocr_filter=None, results=100):
@@ -350,4 +398,3 @@ def get_ocr_text(file_path):
 
 
 print(f"Device: {device}")
-print(f"CLIP model device: {next(clip_model.parameters()).device}")

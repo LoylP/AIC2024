@@ -15,7 +15,7 @@ from requests_aws4auth import AWS4Auth
 import boto3
 import math
 from torch.cuda.amp import autocast  # Import autocast for mixed precision
-from transformers import BeitFeatureExtractor, BeitModel, XLMRobertaTokenizer, AutoModel
+from transformers import BeitFeatureExtractor, BeitModel, XLMRobertaTokenizer, XLMRobertaModel, AutoModel
 
 import concurrent.futures
 
@@ -95,10 +95,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load BEIT3 model and tokenizer
 beit_model = BeitModel.from_pretrained(
-    'microsoft/beit-base-patch16-224-pt22k-ft22k').to(device)
-beit_model.eval()
+    'Raghavan/beit3_base_patch16_384_coco_retrieval').to(device)
 feature_extractor = BeitFeatureExtractor.from_pretrained(
-    'microsoft/beit-base-patch16-224-pt22k-ft22k')
+    'Raghavan/beit3_base_patch16_384_coco_retrieval')
 
 # Load the XLMRoberta tokenizer for BEiT-3
 text_tokenizer = XLMRobertaTokenizer(
@@ -109,7 +108,7 @@ text_model = AutoModel.from_pretrained('bert-base-uncased').to(device)
 
 
 def encode_text(text):
-    tokens = text_tokenizer(text, return_tensors="pt",
+    tokens = text_tokenizer(text, return_tensors="pt", max_length=512,
                             padding=True, truncation=True).to(device)
     with torch.no_grad():
         with autocast():  # Enable mixed precision

@@ -6,13 +6,14 @@ import axios from 'axios';
 const Position = () => {
     const [boxes, setBoxes] = useState([]);
     const [filteredImages, setFilteredImages] = useState([]);
+    const [error, setError] = useState(null);
 
     const handleBoxDrawn = async (box) => {
         setBoxes([...boxes, box]);
 
         // Call the API to filter images based on bounding boxes
         try {
-            const response = await axios.get('http:localhost:8000/api/search', {
+            const response = await axios.get('http://localhost:8000/api/search', {
                 params: {
                     search_query: '', // Add search query if needed
                     obj_filters: [
@@ -24,8 +25,10 @@ const Position = () => {
                 },
             });
             setFilteredImages(response.data);
+            setError(null); // Reset error on successful fetch
         } catch (error) {
             console.error('Error fetching filtered images:', error);
+            setError('Error fetching images. Please try again.');
         }
     };
 
@@ -45,10 +48,11 @@ const Position = () => {
             </div>
             <div>
                 <h2>Filtered Images</h2>
+                {error && <p style={{ color: 'red' }}>{error}</p>}
                 <ul>
                     {filteredImages.map((image, index) => (
                         <li key={index}>
-                            <img src={`/images/${image.file}`} alt={`Image ${index + 1}`} style={{ maxWidth: '200px' }} />
+                            <img src={`/images/${image.file}`} alt={`Image file ${image.file}`} style={{ maxWidth: '200px' }} />
                             <p>{image.file}</p>
                         </li>
                     ))}
@@ -57,4 +61,5 @@ const Position = () => {
         </div>
     );
 };
+
 export default Position;

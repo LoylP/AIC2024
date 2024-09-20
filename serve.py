@@ -403,7 +403,8 @@ async def search_similar(
             "VideosId": result.get('VideosId', ''),
             "frame": result.get('frame', ''),
             "file_path": result.get('file_path', ''),
-            "similarity": result.get('similarity', 0)
+            "similarity": result.get('similarity', 0),
+            "folder": result.get("file_path").split('/')[0]
         }
         image_data_list.append(image_data)
 

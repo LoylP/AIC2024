@@ -23,7 +23,6 @@ from nltk.corpus import wordnet
 import nltk
 
 nltk.download('wordnet')
-
 # Add this line
 translator = Translator()
 
@@ -32,7 +31,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,11 +42,11 @@ base_path = os.getenv('VIDEO_PATH')
 app.mount("/images", StaticFiles(directory=path), name="images")
 
 # Replace Elasticsearch client initialization with OpenSearch
-region = os.getenv('AWS_REGION')
+region = 'ap-southeast-1'
 service = 'aoss'
 aws_access_key = os.getenv('AWS_ACCESS_KEY')
 aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = os.getenv('HOST_OPENSEARCH')
+host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
 
 session = boto3.Session(
     aws_access_key_id=aws_access_key,
@@ -77,7 +76,6 @@ client = MongoClient(uri)
 db = client['obj-detection']
 collection = db['object-detection-results']
 
-
 class ImageData(BaseModel):
     id: int
     frame: str
@@ -87,11 +85,9 @@ class ImageData(BaseModel):
     ocr_text: str
     text: str = ""
 
-
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the Image Search API!"}
-
 
 @app.get("/api/get-all-objects")
 async def get_all_objects():
@@ -99,7 +95,6 @@ async def get_all_objects():
     with open('static/unique_classes.json') as f:
         unique_classes = json.load(f)
     return unique_classes
-
 
 async def expand_query(translated_query):
     words = translated_query.split()
@@ -125,7 +120,6 @@ async def expand_query(translated_query):
 
     return prompt
 
-
 async def translate_to_english(text):
     try:
         translation = translator.translate(text, dest='en', src='auto')
@@ -133,8 +127,7 @@ async def translate_to_english(text):
     except Exception as e:
         print(f"Translation error: {str(e)}")
         return text
-
-
+    
 @app.get("/api/milvus/search")
 async def search_milvus_endpoint(
     search_query: Optional[str] = Query(None, description="Main search query"),
@@ -233,7 +226,6 @@ async def search_milvus_endpoint(
 # Initialize an additional model
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-
 def combine_results(clip_results, sbert_results, weights=(0.7, 0.3)):
     combined = {}
     for result in clip_results + sbert_results:
@@ -309,7 +301,6 @@ def filter_results_by_objects(results, obj_filters, obj_position_filters):
     ]
 
     return final_results
-
 
 @app.post("/api/milvus/search_by_image")
 async def search_milvus_by_image(

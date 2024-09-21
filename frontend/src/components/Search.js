@@ -39,7 +39,16 @@ const Search = () => {
 
 	const handleSeek = () => {
 		if (videoRef.current) {
-			videoRef.current.currentTime = parseFloat(time)/25; 
+			const folderName = selectedImage.folder; // Assuming selectedImage has the folder name
+			const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25; 
+			
+			// Parse the time and ensure it's a finite number
+			const parsedTime = parseFloat(time);
+			if (isFinite(parsedTime)) {
+				videoRef.current.currentTime = parsedTime / fps; 
+			} else {
+				console.error("Invalid time value:", time);
+			}
 		}
 	};
 	
@@ -65,7 +74,8 @@ const Search = () => {
 		const newNextQueries = [...nextQueries];
 		newNextQueries[index] = value;
 		setNextQueries(newNextQueries);
-		setIsOcrDisabled(newNextQueries.some(q => q) || !value); // Disable OCR input if any next query is present or if the current next query is empty
+		// Removed the condition that disables OCR input based on next queries
+		// setIsOcrDisabled(newNextQueries.some(q => q) || !value); 
 
 		// Clear OCR description if any next query is entered
 		if (value) {
@@ -524,7 +534,9 @@ const Search = () => {
 								crossOrigin="anonymous"
 								autoPlay
 								onLoadedMetadata={() => {
-									videoRef.current.currentTime = selectedImage.frame / 25; // Set default time to 10 seconds
+									const folderName = selectedImage.folder;
+									const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25;
+									videoRef.current.currentTime = selectedImage.frame / fps;
 								}}
 							>
 								<source src={`${API_BASE_URL}/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />

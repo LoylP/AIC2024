@@ -44,9 +44,6 @@ exceptiongroup==1.2.2
 executing==2.0.1
 fabio==2024.4.0
 faiss-cpu==1.8.0.post1
-fastapi==0.112.0
-fastapi-cache==0.1.0
-fastapi-cli==0.0.5
 fire==0.6.0
 flatbuffers==24.3.25
 fonttools==4.53.1
@@ -263,7 +260,6 @@ wsproto==1.2.0
 xmltodict==0.13.0
 yarl==1.9.11
 zipp==3.20.0
-fastapi==0.114.1
 pymilvus==2.4.6
 faiss-cpu 
 open_clip_torch
@@ -272,3 +268,5 @@ boto3
 aiohttp
 googletrans
 nltk
+fastapi
+pymilvus

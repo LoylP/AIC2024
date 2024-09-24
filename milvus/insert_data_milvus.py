@@ -6,6 +6,8 @@ from pymilvus import connections, Collection, FieldSchema, CollectionSchema, Dat
 from tqdm import tqdm  # Import tqdm for progress bar
 from torch.nn import DataParallel  # For multi-GPU support
 from transformers import BeitImageProcessor, BeitModel
+from swin_transformer_v2 import SwinTransformerV2  
+
 
 # Configuration
 image_folder = "./keyframes_preprocess/"
@@ -37,11 +39,16 @@ else:
     raise RuntimeError("CUDA is not available. Please check your GPU setup.")
 
 # Load BEiT3 model and wrap it for multi-GPU usage
-model = BeitModel.from_pretrained(
-    'Raghavan/beit3_base_patch16_384_coco_retrieval').cuda()
+# model = BeitModel.from_pretrained(
+#     'Raghavan/beit3_base_patch16_384_coco_retrieval').cuda()
+# model = DataParallel(model, device_ids=device_ids)
+# image_processor = BeitImageProcessor.from_pretrained(
+#     'Raghavan/beit3_base_patch16_384_coco_retrieval')
+
+# Load Swin model và wrap nó cho việc sử dụng multi-GPU
+model = SwinTransformerV2(img_size=384, patch_size=4, in_chans=3, num_classes=0).cuda()  
 model = DataParallel(model, device_ids=device_ids)
-image_processor = BeitImageProcessor.from_pretrained(
-    'Raghavan/beit3_base_patch16_384_coco_retrieval')
+image_processor = None 
 
 # Count total images for progress tracking
 total_images = sum([len(files) for _, _, files in os.walk(image_folder)])
@@ -56,14 +63,13 @@ with tqdm(total=total_images, desc="Processing images", unit="image") as pbar:
                 image = Image.open(file_path).convert("RGB")
 
                 # Preprocess the image
-                image_input = image_processor(
-                    images=image, return_tensors="pt").to(device_ids[0])
+                image_input = image.resize((384, 384)) 
+                image_input = np.array(image_input).transpose(2, 0, 1)  
+                image_input = torch.tensor(image_input).unsqueeze(0).float().to(device_ids[0]) 
 
                 with torch.no_grad():
-                    outputs = model.module(**image_input)
-                    # Extract [CLS] token embedding
-                    image_embedding = outputs.last_hidden_state[:, 0, :].cpu(
-                    ).numpy()
+                    outputs = model(image_input)  
+                    image_embedding = outputs.cpu().numpy()  
 
                 # Extract folder name and image name
                 relative_path = os.path.relpath(file_path, image_folder)

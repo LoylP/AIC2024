@@ -7,7 +7,7 @@ import os
 from app import App
 import json
 from milvus import search_milvus as milvus_search
-from opensearchpy import OpenSearch, RequestsHttpConnection
+from elasticsearch import Elasticsearch
 from requests_aws4auth import AWS4Auth
 import boto3
 from typing import List, Optional
@@ -59,15 +59,9 @@ credentials = session.get_credentials().get_frozen_credentials()
 awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
                    region, service, session_token=credentials.token)
 
-client = OpenSearch(
-    hosts=[{'host': host, 'port': 443}],
-    http_auth=awsauth,
-    use_ssl=True,
-    verify_certs=True,
-    connection_class=RequestsHttpConnection,
-    timeout=60,
-    max_retries=5,
-    retry_on_timeout=True
+client = Elasticsearch(
+  "https://ocrfilter-a5f7b1.es.us-east-1.aws.elastic.cloud:443",
+  api_key="WlRFZU41SUJ2UVZGR3NGbkU0V0Y6TWRpTzdyZ0FTUDJPWnF3TEh0WnVoUQ=="
 )
 
 # MongoDB connection

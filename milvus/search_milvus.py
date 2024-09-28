@@ -10,7 +10,7 @@ from open_clip import tokenizer
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import io
-from opensearchpy import OpenSearch, RequestsHttpConnection
+from elasticsearch import Elasticsearch
 from requests_aws4auth import AWS4Auth
 import boto3
 import math
@@ -53,15 +53,9 @@ credentials = session.get_credentials().get_frozen_credentials()
 awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
                    region, service, session_token=credentials.token)
 
-client = OpenSearch(
-    hosts=[{'host': host, 'port': 443}],
-    http_auth=awsauth,
-    use_ssl=True,
-    verify_certs=True,
-    connection_class=RequestsHttpConnection,
-    timeout=60,
-    max_retries=5,
-    retry_on_timeout=True
+client = Elasticsearch(
+  os.getenv('ELASTICSEARCH_URL'),  
+  api_key=os.getenv('ELASTICSEARCH_API_KEY')  
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

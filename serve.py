@@ -446,4 +446,4 @@ async def get_surrounding_images(filename: str = Query(..., description="Path of
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("serve:app", host="0.0.0.0", port=8080, reload=True)

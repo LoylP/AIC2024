@@ -3,7 +3,7 @@ import { Spin, Collapse, Select, Input, Button, message } from "antd";
 import "./Search.css";
 
 
-const API_BASE_URL = "http://127.0.0.1:8000"
+const API_BASE_URL = "http://10.102.196.135:8080"
 
 const { Panel } = Collapse;
 const { Option } = Select;

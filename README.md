@@ -4,7 +4,7 @@
 This text-based multimodal search engine is specifically designed to retrieve log life events within videos. The engine is equipped with advanced search capabilities and can extract keyframes based on a lengthy series query. Additionally, it enables the identification of words within the images contained in the videos. Our motivation is driven by the desire to learn, innovate, and make a difference.
 
 
-### Feature:
+## Features
 
 **Full-text Search**: This feature allows for searching keyframes across a lengthy sentence. Furthermore, our engine supports breaking down long-series queries into individual sentences, which is very userfull for retrieval.
 

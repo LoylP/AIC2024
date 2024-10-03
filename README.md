@@ -29,6 +29,6 @@ Make sure you have the following installed:
 2.	Install dependencies:
 ```pip install -r requirement.txt```
 3.	Start the search engine:
-```unicorn serve: app –reload```
+```unicorn serve:app -–reload```
 4.	Start the frontend app:
 ```npm run start```

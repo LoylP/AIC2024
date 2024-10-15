@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Spin, Collapse, Input, Button, message } from "antd";
+import { Spin, Collapse, Button, message } from "antd";
 import "./Search.css";
 
 
@@ -7,10 +7,9 @@ const API_BASE_URL = "http://10.102.196.135:8080"
 
 const { Panel } = Collapse;
 
-const Search = () => {
+const SearchExtra = () => {
 	const [inputType, setInputType] = useState("text");
 	const [searchValue, setSearchValue] = useState("");
-	const [nextQueries, setNextQueries] = useState([""]); // New state for next queries
 	const [results, setResults] = useState([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [ocrDescription, setOcrDescription] = useState("");
@@ -20,8 +19,6 @@ const Search = () => {
 	const [isLoading, setIsLoading] = useState(false);
 	const modalRef = useRef(null);
 	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false);
-	const [isOcrDisabled, setIsOcrDisabled] = useState(false); // New state to control OCR input
-	const [showVideo, setShowVideo] = useState(false); // New state to control video visibility
 	const [surroundingImages, setSurroundingImages] = useState([]); // New state for surrounding images
 
 	const itemsPerPage = 25;
@@ -30,48 +27,9 @@ const Search = () => {
 	const indexOfFirstItem = indexOfLastItem - itemsPerPage;
 	const currentItems = Array.isArray(results) ? results.slice(indexOfFirstItem, indexOfLastItem) : [];
 
-	//Show video
-	const videoRef = useRef(null);
-	const [time, setTime] = useState("");
-
-	const handleSeek = () => {
-		if (videoRef.current) {
-			const folderName = selectedImage.folder; // Assuming selectedImage has the folder name
-			const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25; 
-			
-			// Parse the time and ensure it's a finite number
-			const parsedTime = parseFloat(time);
-			if (isFinite(parsedTime)) {
-				videoRef.current.currentTime = parsedTime / fps; 
-			} else {
-				console.error("Invalid time value:", time);
-			}
-		}
-	};
 
 	const handleInputChange = (e) => {
 		setSearchValue(e.target.value);
-	};
-
-	const handleNextQueryChange = (index, value) => {
-		const newNextQueries = [...nextQueries];
-		newNextQueries[index] = value;
-		setNextQueries(newNextQueries);
-		// Removed the condition that disables OCR input based on next queries
-		// setIsOcrDisabled(newNextQueries.some(q => q) || !value); 
-
-		// Clear OCR description if any next query is entered
-		if (value) {
-			setOcrDescription(""); // Clear OCR description
-		}
-	};
-
-	const addNextQuery = () => {
-		setNextQueries([...nextQueries, ""]); // Add a new empty query
-	};
-
-	const removeNextQuery = (index) => {
-		setNextQueries(nextQueries.filter((_, i) => i !== index));
 	};
 
 	const handleButtonSearch = async () => {
@@ -80,38 +38,27 @@ const Search = () => {
 			let response;
 
 			if (inputType === "text") {
-				const url = new URL(`${API_BASE_URL}/api/milvus/search`);
+				const url = new URL(`${API_BASE_URL}/api/search`);
 				if (searchValue) {
-					url.searchParams.append("search_query", searchValue);
+					url.searchParams.append("search_query", searchValue); // Updated parameter name
 				}
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
 				}
-	
-				url.searchParams.append("use_expanded_prompt", useExpandedPrompt);
 
-				// Add next queries to the URL
-				if (nextQueries.length > 0) {
-					nextQueries.forEach((nextQuery) => {
-						if (nextQuery) {
-							url.searchParams.append("next_queries", nextQuery);
-						}
-					});
-				}
-
-				if (searchValue || ocrDescription || nextQueries.some(q => q)) {
+				if (searchValue || ocrDescription) { 
 					response = await fetch(url);
 				} else {
 					throw new Error("Please provide at least one search criteria");
 				}
 			} else if (inputType === "file" && selectedFile) {
 				const formData = new FormData();
-				formData.append("image", selectedFile);
-				const url = new URL(`${API_BASE_URL}/api/milvus/search_by_image`);
+				formData.append("file", selectedFile); 
+				const url = new URL(`${API_BASE_URL}/api/search/image`); 
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
 				}
-			
+
 				response = await fetch(url, {
 					method: "POST",
 					body: formData,
@@ -125,8 +72,8 @@ const Search = () => {
 			}
 
 			const data = await response.json();
-			if (data.results && Array.isArray(data.results)) {
-				setResults(data.results);
+			if (data && Array.isArray(data)) { // Adjusted to match the new response structure
+				setResults(data);
 			} else {
 				console.error("Unexpected data structure:", data);
 				setResults([]);
@@ -154,10 +101,9 @@ const Search = () => {
 	const handleImageClick = async (image) => {
 		setSelectedImage(image);
 		setShowModal(true);
-		setShowVideo(false); // Hide video when selecting a new image
 
 		// Call the API to fetch surrounding images
-		await fetchSurroundingImages(image.file_path); // Pass the file path of the selected image
+		await fetchSurroundingImages(image.path); // Pass the file path of the selected image
 	};
 
 	const fetchSurroundingImages = async (imagePath) => {
@@ -186,35 +132,6 @@ const Search = () => {
 		setSelectedImage(null);
 	};
 
-	const handleSearchSimilar = async () => {
-		if (selectedImage) {
-			setIsLoading(true);
-			try {
-				const response = await fetch(`${API_BASE_URL}/api/search_similar?image_path=${encodeURIComponent(selectedImage.file_path)}&ocr_filter=${ocrDescription}&results=100`, {
-					method: "GET",
-				});
-
-				if (!response.ok) {
-					throw new Error(`HTTP error! status: ${response.status}`);
-				}
-
-				const data = await response.json();
-				if (data.results && Array.isArray(data.results)) {
-					setResults(data.results);
-				} else {
-					console.error("Unexpected data structure:", data);
-					setResults([]);
-				}
-
-				setCurrentPage(1);
-				setShowModal(false);
-			} catch (error) {
-				console.error("Error during similar image search:", error);
-			} finally {
-				setIsLoading(false);
-			}
-		}
-	};
 
 	const handleReset = () => {
 		setInputType("text");
@@ -224,7 +141,6 @@ const Search = () => {
 		setOcrDescription("");
 		setSelectedFile(null);
 		setSelectedImage(null);
-		setNextQueries([""]); // Reset next queries
 	};
 
 	useEffect(() => {
@@ -247,12 +163,12 @@ const Search = () => {
 		}
 
 		try {
-			const response = await fetch(`${API_BASE_URL}/api/export-to-csv`, {
-				method: "POST",
+			const response = await fetch(`${API_BASE_URL}/api/export-to-csv`, { // Updated endpoint
+				method: "POST", // Changed method to POST
 				headers: {
-					"Content-Type": "application/json",
+					"Content-Type": "application/json", // Set content type to JSON
 				},
-				body: JSON.stringify(results.slice(0, 100)),
+				body: JSON.stringify(results), // Send the results as JSON
 			});
 
 			if (response.ok) {
@@ -261,7 +177,7 @@ const Search = () => {
 				const a = document.createElement("a");
 				a.style.display = "none";
 				a.href = url;
-				a.download = "search_results.csv";
+				a.download = "query.csv"; // Updated filename
 				document.body.appendChild(a);
 				a.click();
 				window.URL.revokeObjectURL(url);
@@ -275,12 +191,6 @@ const Search = () => {
 		}
 	};
 
-	// Add a button to close all next queries
-	const closeAllNextQueries = () => {
-		setNextQueries([""]); // Reset next queries
-		setOcrDescription(""); // Clear OCR description
-		setIsOcrDisabled(false); // Enable OCR input when closing all next queries
-	};
 
 	return (
 		<div>
@@ -326,34 +236,14 @@ const Search = () => {
 								onChange={handleFileChange}
 							/>
 						)}
-						<div className="flex items-center mb-4"> {/* New div for the expand button */}
+						<div className="flex items-center mb-4"> 
 							<input
 								type="checkbox"
 								checked={useExpandedPrompt}
-								onChange={(e) => setUseExpandedPrompt(e.target.checked)} // New line
+								onChange={(e) => setUseExpandedPrompt(e.target.checked)}
 								className="mr-2"
 							/>
 							<label>Use Expanded Prompt</label>
-						</div>
-						{/* Next Queries Section */}
-						<div className="mb-4">
-							<h3 className="text-lg font-bold">Next Queries</h3>
-							{nextQueries.map((nextQuery, index) => (
-								<div key={index} className="flex items-center mb-2">
-									<Input
-										className="mr-2"
-										placeholder={`Next Query ${index + 1}`}
-										value={nextQuery}
-										onChange={(e) => handleNextQueryChange(index, e.target.value)}
-									/>
-									<Button onClick={() => removeNextQuery(index)} type="danger">
-										Remove
-									</Button>
-								</div>
-							))}
-							<Button onClick={addNextQuery} type="dashed" style={{ width: "100%" }}>
-								Add Next Query
-							</Button>
 						</div>
 						<button
 							onClick={handleButtonSearch}
@@ -363,20 +253,14 @@ const Search = () => {
 						</button>
 						<Collapse defaultActiveKey={["1", "2"]} style={{ padding: 10, marginTop: 30 }}>
 							<Panel header="OCR Filter" key="1" style={{ fontSize: 20, fontWeight: 500 }}>
-								{/* New button to close all next queries */}
-								<Button onClick={closeAllNextQueries} type="danger" className="mb-2">
-									Close All Next Queries
-								</Button>
 								<textarea
 									placeholder="Enter OCR description"
 									value={ocrDescription}
 									onChange={(e) => setOcrDescription(e.target.value)}
 									className="mb-4 p-2 border rounded resize-none text-black"
 									id="ocr-textarea"
-									disabled={isOcrDisabled} // Disable OCR input based on state
 								/>
 							</Panel>
-							{/* Removed Object Filter Panel */}
 						</Collapse>
 					</div>
 
@@ -424,13 +308,13 @@ const Search = () => {
 												onClick={() => handleImageClick(image)}>
 												<img
 													className="w-full h-40 object-cover rounded shadow-md"
-													src={`${API_BASE_URL}/images/${image.file_path}`}
-													alt={image.file}
+													src={`${API_BASE_URL}/images/${image.path}`}
+													alt={image.path}
 												/>
 												<div className="absolute inset-0 flex flex-col justify-end p-2">
 													<div className="bg-black bg-opacity-40 p-1 rounded">
 														<p className="text-white text-sm truncate">
-															{image.frame} {image.file}
+															{image.frame} {image.videos_ID}
 														</p>
 													</div>
 												</div>
@@ -448,71 +332,30 @@ const Search = () => {
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
 					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full">
 						<div className="flex justify-between items-center mb-4">
-							<h2 className="text-2xl font-bold text-black">{selectedImage.file}</h2>
+							<h2 className="text-2xl font-bold text-black">{selectedImage.path}</h2>
 						</div>
-						{/* Image display */}
-						{showVideo ? (
-							<video
-								ref={videoRef}
-								className="w-full mb-4 rounded"
-								controls
-								preload="auto"
-								muted
-								crossOrigin="anonymous"
-								autoPlay
-								onLoadedMetadata={() => {
-									const folderName = selectedImage.folder;
-									const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25;
-									videoRef.current.currentTime = selectedImage.frame / fps;
-								}}
-							>
-								<source src={`${API_BASE_URL}/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
-								Your browser does not support the video tag.
-							</video>
-						) : (
-							<img
-								src={`${API_BASE_URL}/images/${selectedImage.file_path}`}
-								alt={selectedImage.file_path}
+						<img
+							src={`${API_BASE_URL}/images/${selectedImage.path}`}
+								alt={selectedImage.path}
 								className="w-full mb-4 rounded"
 							/>
-						)}
 						<div className="flex gap-4">
 							<p className="mb-2 text-black">
 								<strong>Frame:</strong> {selectedImage.frame}
 							</p>
 							<p className="mb-2 text-black">
-									<strong>File:</strong> {selectedImage.file_path}
+									<strong>Videos ID:</strong> {selectedImage.videos_ID}
 								</p>
 						</div>
 						
 						<p className="mb-2 text-black">
 							<strong>OCR Text:</strong> {selectedImage.ocr_text}
 						</p>
-						<button
-							onClick={handleSearchSimilar}
-							className="bg-blue-500 text-white px-2 py-2 rounded hover:bg-blue-600">
-							Search Similar
-						</button>
-						<button
-							onClick={() => setShowVideo(!showVideo)} 
-							className="bg-green-500 text-white px-2 py-2 rounded hover:bg-green-600 ml-2">
-							{showVideo ? "Frame" : "Video"}
-						</button>
-						<input
-							type="text"
-							value={time}
-							onChange={(e) => setTime(e.target.value)} 
-							placeholder="Enter frame"
-							className="bg-white-500 text-black px-2 py-2 rounded"
-						/>
-						<button onClick={handleSeek} className="bg-amber-500 text-white px-2 py-2 rounded hover:bg-amber-600 ml-2">
-							Move
-						</button>
 
 						{/* Display surrounding images */}
 						<div className="mt-2 grid grid-cols-3 gap-1 overflow-y-auto max-h-44">
 							{surroundingImages.map((img, index) => (
-								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, file_path: img })}> {/* Update selected image on click */}
+								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, path: img })}> {/* Update selected image on click */}
 									<img
 										src={`${API_BASE_URL}/images/${img}`}
 										alt={`Surrounding ${index + 1}`}
@@ -528,5 +371,5 @@ const Search = () => {
 	);
 };
 
-export default Search;
+export default SearchExtra;
 					

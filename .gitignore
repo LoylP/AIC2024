@@ -2,8 +2,11 @@
 __pycache__/
 .env
 .env.*
-
 ./frontend/node_modules/
 static/keyframes_preprocess
+static/keyframes_preprocess_2
 static/videos
+static/map
+static/videos_cut
+static
 unilm/

@@ -224,9 +224,16 @@ const SearchExtra = () => {
 					},
 				});
 
-				const data = await response.json();
-				message.success("QA submitted successfully!");
-				console.log(data);
+				const data = await response.json();				
+				if (data.status === true) { 
+					if (data.submission === "WRONG") { 
+						message.error(`Sai đáp án!\n${data.description}`);
+					} else {
+						message.success(`Nộp thành công!\n${data.submission}\n${data.description}`);
+					}
+				} else {
+					message.error("Chưa nộp được! hoặc đã nộp trước đó!");
+				}
 			} catch (error) {
 				console.error("Error submitting QA:", error);
 				message.error("Failed to submit QA");
@@ -250,14 +257,16 @@ const SearchExtra = () => {
 					},
 				});
 
-				if (!response.ok) {
-					throw new Error(`HTTP error! status: ${response.status}`);
-					message.error("Failed to submit KIS");
+				const data = await response.json();				
+				if (data.status === true) { 
+					if (data.submission === "WRONG") { 
+						message.error(`Sai đáp án!\n${data.description}`);
+					} else {
+						message.success(`Nộp thành công!\n${data.submission}\n${data.description}`);
+					}
+				} else {
+					message.error("Chưa nộp được! hoặc đã nộp trước đó!");
 				}
-				//Colab
-				const data = await response.json();
-				message.success("KIS submitted successfully!");
-				console.log(data);
 			} catch (error) {
 				console.error("Error submitting KIS:", error);
 				message.error("Failed to submit KIS");

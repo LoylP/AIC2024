@@ -267,7 +267,6 @@ const Search = () => {
 				document.body.appendChild(a);
 				a.click();
 				window.URL.revokeObjectURL(url);
-				message.success("CSV file exported successfully");
 			} else {
 				throw new Error("Failed to export CSV");
 			}
@@ -298,9 +297,16 @@ const Search = () => {
 					},
 				});
 
-				const data = await response.json();
-				message.success("QA submitted successfully!");
-				console.log(data);
+				const data = await response.json();				
+				if (data.status === true) { // Changed from == to ===
+					if (data.submission === "WRONG") { // Changed from == to ===
+						message.error(`Sai đáp án!\n${data.description}`);
+					} else {
+						message.success(`Nộp thành công!\n${data.submission}\n${data.description}`);
+					}
+				} else {
+					message.error("Chưa nộp được! hoặc đã nộp trước đó!");
+				}
 			} catch (error) {
 				console.error("Error submitting QA:", error);
 				message.error("Failed to submit QA");
@@ -324,14 +330,17 @@ const Search = () => {
 					},
 				});
 
-				if (!response.ok) {
-					throw new Error(`HTTP error! status: ${response.status}`);
-					message.error("Failed to submit KIS");
-				}
 				//Colab
-				const data = await response.json();
-				message.success("KIS submitted successfully!");
-				console.log(data);
+				const data = await response.json();				
+				if (data.status === true) { // Changed from == to ===
+					if (data.submission === "WRONG") { // Changed from == to ===
+						message.error(`Sai đáp án!\n${data.description}`);
+					} else {
+						message.success(`Nộp thành công!\n${data.submission}\n${data.description}`);
+					}
+				} else {
+					message.error("Chưa nộp được! hoặc đã nộp trước đó!");
+				}
 			} catch (error) {
 				console.error("Error submitting KIS:", error);
 				message.error("Failed to submit KIS");

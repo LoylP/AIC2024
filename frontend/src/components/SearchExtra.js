@@ -20,6 +20,7 @@ const SearchExtra = () => {
 	const modalRef = useRef(null);
 	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false);
 	const [surroundingImages, setSurroundingImages] = useState([]); // New state for surrounding images
+	const [inputMode, setInputMode] = useState("kis"); // New state to manage input mode
 
 	const itemsPerPage = 25;
 
@@ -40,7 +41,7 @@ const SearchExtra = () => {
 			if (inputType === "text") {
 				const url = new URL(`${API_BASE_URL}/api/search`);
 				if (searchValue) {
-					url.searchParams.append("search_query", searchValue); // Updated parameter name
+					url.searchParams.append("search_query", searchValue); 
 				}
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
@@ -102,8 +103,8 @@ const SearchExtra = () => {
 		setSelectedImage(image);
 		setShowModal(true);
 
-		// Call the API to fetch surrounding images
-		await fetchSurroundingImages(image.path); // Pass the file path of the selected image
+		await fetchSurroundingImages(image.path); 
+
 	};
 
 	const fetchSurroundingImages = async (imagePath) => {
@@ -115,7 +116,7 @@ const SearchExtra = () => {
 			}
 			const data = await response.json();
 			if (data.surrounding_images && Array.isArray(data.surrounding_images)) {
-				setSurroundingImages(data.surrounding_images); // Store surrounding images
+				setSurroundingImages(data.surrounding_images);
 			} else {
 				console.error("Unexpected data structure:", data);
 				setSurroundingImages([]);
@@ -127,9 +128,62 @@ const SearchExtra = () => {
 		}
 	};
 
+	// Ensure fetchSimilarImages function is still defined
+	const fetchSimilarImages = async (imagePath) => {
+		setIsLoading(true);
+		try {
+			const response = await fetch(`${API_BASE_URL}/api/search_similar?image_path=${encodeURIComponent(imagePath)}`);
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+			const data = await response.json();
+			if (Array.isArray(data)) {
+				setResults(data); // Cập nhật kết quả tìm kiếm tương tự
+			} else {
+				console.error("Unexpected data structure:", data);
+				setResults([]);
+			}
+		} catch (error) {
+			console.error("Error fetching similar images:", error);
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
 	const handleCloseModal = () => {
 		setShowModal(false);
 		setSelectedImage(null);
+	};
+
+	const handleSearchSimilar = async () => {
+		if (selectedImage) {
+			await fetchSimilarImages(selectedImage.path);
+			setIsLoading(true);
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/search_similar?image_path=${encodeURIComponent(selectedImage.path)}`, { // Sửa endpoint và tham số
+					method: "GET",
+				});
+
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
+
+				const data = await response.json();
+				if (data && Array.isArray(data)) { // Kiểm tra cấu trúc dữ liệu
+					setResults(data); // Cập nhật kết quả tìm kiếm tương tự
+				} else {
+					console.error("Unexpected data structure:", data);
+					setResults([]);
+				}
+
+				setCurrentPage(1);
+				setShowModal(false);
+			} catch (error) {
+				console.error("Error during similar image search:", error);
+			} finally {
+				setIsLoading(false);
+			}
+		}
 	};
 
 
@@ -155,6 +209,61 @@ const SearchExtra = () => {
 			document.removeEventListener("mousedown", handleClickOutside);
 		};
 	}, []);
+
+	const handleSubmit = async () => {
+		if (inputMode === "qa") {
+			const number = parseInt(document.querySelector('input[placeholder="Number"]').value);
+			const videos_ID = document.querySelector('input[placeholder="Videos_ID"]').value;
+			const time = parseFloat(document.querySelector('input[placeholder="Time"]').value);
+
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/submit-qa?number=${number}&videos_ID=${videos_ID}&time=${time}`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+				});
+
+				const data = await response.json();
+				message.success("QA submitted successfully!");
+				console.log(data);
+			} catch (error) {
+				console.error("Error submitting QA:", error);
+				message.error("Failed to submit QA");
+			}
+		} else if (inputMode === "kis") {
+			const videos_ID = document.querySelector('input[placeholder="Videos_ID"]').value;
+			const start = parseInt(document.querySelector('input[placeholder="Start Time"]').value) || 0; // Default to 0 if NaN
+			const end = parseInt(document.querySelector('input[placeholder="End Time"]').value) || 0; // Default to 0 if NaN
+
+			// Ensure start and end are valid numbers
+			if (isNaN(start) || isNaN(end)) {
+				message.error("Start and End times must be valid numbers.");
+				return;
+			}
+
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/submit-kis?videos_ID=${videos_ID}&start=${start}&end=${end}`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+				});
+
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+					message.error("Failed to submit KIS");
+				}
+				//Colab
+				const data = await response.json();
+				message.success("KIS submitted successfully!");
+				console.log(data);
+			} catch (error) {
+				console.error("Error submitting KIS:", error);
+				message.error("Failed to submit KIS");
+			}
+		}
+	};
 
 	const handleExportCSV = async () => {
 		if (results.length === 0) {
@@ -191,6 +300,13 @@ const SearchExtra = () => {
 		}
 	};
 
+	const handleKis = () => {
+		setInputMode("kis"); // Set input mode to kis
+	};
+
+	const handleQA = () => {
+		setInputMode("qa"); // Set input mode to QA
+	};
 
 	return (
 		<div>
@@ -327,10 +443,9 @@ const SearchExtra = () => {
 					</div>
 				</div>
 			</div>
-			{/* Modal for image details */}
 			{showModal && selectedImage && (
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full">
+					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full overflow-y-auto max-h-[100vh]"> {/* Thêm overflow-y và max-h */}
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-2xl font-bold text-black">{selectedImage.path}</h2>
 						</div>
@@ -339,21 +454,100 @@ const SearchExtra = () => {
 								alt={selectedImage.path}
 								className="w-full mb-4 rounded"
 							/>
+
 						<div className="flex gap-4">
 							<p className="mb-2 text-black">
 								<strong>Frame:</strong> {selectedImage.frame}
 							</p>
 							<p className="mb-2 text-black">
 									<strong>Videos ID:</strong> {selectedImage.videos_ID}
-								</p>
+							</p>
+							<p className="mb-2 text-black">
+								<strong>Time:</strong> {selectedImage.time}
+							</p>
+							<p className="mb-2 text-black">
+								<strong>Fps:</strong> {selectedImage.fps}
+							</p>
+						</div>
+
+						<div className="flex justify-between items-center mb-4">
+							
+							<div className="flex gap-4">
+								{inputMode === "kis" ? ( 
+									<>
+										<input
+											type="text"
+											defaultValue={selectedImage.videos_ID}
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Videos_ID"
+										/>
+										<input
+											type="number"
+											defaultValue={selectedImage.time}
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Start Time"
+										/>
+										<input
+											type="number"
+											defaultValue={selectedImage.time} 
+											className="border-2 border-gray-300 bg-white h-10 rounded-lg text-sm focus:outline-none"
+											placeholder="End Time"
+										/>
+									</>
+								) : (
+									<>
+										<input
+											type="number"
+											defaultValue={0} 
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Number"
+										/>
+										<input
+											type="text"
+											defaultValue={selectedImage.videos_ID}
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Videos_ID"
+										/>
+										<input
+											type="number"
+											defaultValue={selectedImage.time} 
+											className="border-2 border-gray-300 bg-white h-10 rounded-lg text-sm focus:outline-none"
+											placeholder="Time"
+										/>
+									</>
+								)}
+							</div>
 						</div>
 						
 						<p className="mb-2 text-black">
 							<strong>OCR Text:</strong> {selectedImage.ocr_text}
 						</p>
 
+						<div className="flex gap-4">
+							<button
+								onClick={handleSearchSimilar}
+								className="bg-blue-500 text-white px-2 py-2 rounded hover:bg-blue-600">
+								Search Similar
+							</button>
+							<button
+								onClick={handleKis}
+								className="bg-slate-600 text-white w-20 px-2 py-2 rounded hover:bg-black">
+								Kis
+							</button>
+							<button
+								onClick={handleQA}
+								className="bg-slate-600 text-white w-20 px-2 py-2 rounded hover:bg-black">
+								QA
+							</button>
+							<button
+								onClick={handleSubmit}
+								className="bg-green-500 text-white w-20 px-2 py-2 rounded hover:bg-green-700">
+								Submit
+							</button>
+						</div>
+
 						{/* Display surrounding images */}
-						<div className="mt-2 grid grid-cols-3 gap-1 overflow-y-auto max-h-44">
+						<div className="mt-2 grid grid-cols-3 gap-1 max-h-44">
 							{surroundingImages.map((img, index) => (
 								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, path: img })}> {/* Update selected image on click */}
 									<img
@@ -373,3 +567,9 @@ const SearchExtra = () => {
 
 export default SearchExtra;
 					
+
+
+
+
+
+

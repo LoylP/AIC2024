@@ -64,6 +64,6 @@ with open("static/AlignPaths.json") as f:
 
 # query_texts = ["a sunset over the mountains"]
 # results = search_images_by_text(index_model, image_paths, query_texts)
-image_path = "static/keyframes_preprocess/Videos_L04/L04_V003/1504.jpg"
-results = search_images_by_image(index_model, image_paths, [image_path])
-print(results)
+# image_path = "static/keyframes_preprocess/Videos_L04/L04_V003/1504.jpg"
+# results = search_images_by_image(index_model, image_paths, [image_path])
+# print(results)

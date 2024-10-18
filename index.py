@@ -5,7 +5,7 @@ import numpy as np
 import faiss
 import json
 from sentence_transformers import SentenceTransformer
-
+from transformers import AutoModel, AutoTokenizer
 # Thay đổi mô hình thành ViT-L/14
 model = SentenceTransformer('clip-ViT-L-14')
 

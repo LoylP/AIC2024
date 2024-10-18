@@ -8,8 +8,6 @@ from app import App
 import json
 from milvus import search_milvus as milvus_search
 from elasticsearch import Elasticsearch
-from requests_aws4auth import AWS4Auth
-import boto3
 from typing import List, Optional
 from pymongo import MongoClient
 import math
@@ -21,6 +19,7 @@ import tempfile
 from sentence_transformers import SentenceTransformer
 from nltk.corpus import wordnet
 import nltk
+import requests
 
 nltk.download('wordnet')
 # Add this line
@@ -41,23 +40,6 @@ path = os.getenv('KEYFRAMES_PATH')
 base_path = os.getenv('VIDEO_PATH')
 app.mount("/images", StaticFiles(directory=path), name="images")
 
-# Replace Elasticsearch client initialization with OpenSearch
-region = 'ap-southeast-1'
-service = 'aoss'
-aws_access_key = os.getenv('AWS_ACCESS_KEY')
-aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = '1292lxh5s7786w68m0ii.ap-southeast-1.aoss.amazonaws.com'
-
-session = boto3.Session(
-    aws_access_key_id=aws_access_key,
-    aws_secret_access_key=aws_secret_key,
-    region_name=region
-)
-
-credentials = session.get_credentials().get_frozen_credentials()
-
-awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
-                   region, service, session_token=credentials.token)
 
 client = Elasticsearch(
   "https://ocrfilter-a5f7b1.es.us-east-1.aws.elastic.cloud:443",
@@ -187,7 +169,20 @@ async def search_milvus_endpoint(
                         result[key] = None
 
             # Add folder name to the result
-            result["folder"] = result.get('file_path').split('/')[0]  
+            result["folder"] = result.get('file_path').split('/')[0]
+            result['file_path'] = result['file_path'].replace('merged_videos/', '')
+            fps_list = []  
+            with open("static/video_fps.csv", mode='r') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row['videos_ID'] == result['VideosId']:
+                        fps = row['FPS']
+                        fps_list.append(fps)  
+                        break
+            fps_float = float(fps)
+            time = int(int(result['frame']) * 1000 / fps_float)
+            result['fps'] = fps_float
+            result['time'] = time
 
         # Remove duplicates and increase score
         unique_results = {}
@@ -329,9 +324,26 @@ async def search_milvus_by_image(
                         processed_result[key] = value
                 else:
                     processed_result[key] = value
+            
+            processed_result['file_path'] = processed_result['file_path'].replace('merged_videos/', '')
+
+            fps_list = []  
+            with open("static/video_fps.csv", mode='r') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row['videos_ID'] == processed_result['VideosId']:
+                        fps = row['FPS']
+                        fps_list.append(fps)  
+                        break
+            fps_float = float(fps)
+            time = int(int(processed_result['frame']) * 1000 / fps_float)
+            processed_result['fps'] = fps_float
+            processed_result['time'] = time
+
             processed_results.append(processed_result)
 
         return JSONResponse(content={"results": processed_results, "search_time": search_time})
+    
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An error occurred: {str(e)}")
@@ -391,6 +403,20 @@ async def search_similar(
             "similarity": result.get('similarity', 0),
             "folder": result.get("file_path").split('/')[0]
         }
+        
+        image_data['file_path'] = image_data['file_path'].replace('merged_videos/', '')
+        fps_list = []  
+        with open("static/video_fps.csv", mode='r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                if row['videos_ID'] == image_data['VideosId']:
+                    fps = row['FPS']
+                    fps_list.append(fps)  
+                    break
+        fps_float = float(fps)
+        time = int(int(image_data['frame']) * 1000 / fps_float)
+        image_data['fps'] = fps_float
+        image_data['time'] = time
         image_data_list.append(image_data)
 
     return JSONResponse(content={"results": image_data_list, "search_time": search_time, "search_query": image_path})
@@ -437,6 +463,58 @@ async def get_surrounding_images(filename: str = Query(..., description="Path of
     if images is None:
         raise HTTPException(status_code=404, detail="Images not found")
     return {"surrounding_images": images}
+
+@app.post("/api/submit-qa")
+async def submit_qa(number: int, videos_ID: str, time: float):
+    body_data = {
+        "answerSets": [
+            {
+                "answers": [
+                    {
+                        "text": f"{number}-{videos_ID}-{time}"
+                    }
+                ]
+            }
+        ]
+    }
+    url = "https://eventretrieval.one/api/v2/submit/bec3b699-bdea-4f2c-94ae-61ee065fa76e"
+    params = {
+        "session": "u3I0UsCTHiOIfBEuYw3d7G34UhKZ16oq"
+    }
+
+    try:
+        response = requests.post(url, params=params, json=body_data)
+        response.raise_for_status() 
+        return JSONResponse(content=response.json())
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Có lỗi xảy ra: {e}")
+    
+@app.post("/api/submit-kis")
+async def submit_kis(videos_ID: str, start: int, end: int):
+    body_data = {
+        "answerSets": [
+            {
+                "answers": [
+                    {
+                        "mediaItemName": videos_ID,
+                        "start": start,
+                        "end": end
+                    }
+                ]   
+            }
+        ]
+    }
+    url = "https://eventretrieval.one/api/v2/submit/69ec2262-d829-4ac1-94a2-1aa0a6693266"
+    params = {
+        "session": "u3I0UsCTHiOIfBEuYw3d7G34UhKZ16oq"
+    }
+
+    try:
+        response = requests.post(url, params=params, json=body_data)
+        response.raise_for_status() 
+        return JSONResponse(content=response.json())
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Có lỗi xảy ra: {e}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import io
 from elasticsearch import Elasticsearch
-from requests_aws4auth import AWS4Auth
 import boto3
 import math
 from torch.cuda.amp import autocast  # Import autocast for mixed precision
@@ -33,25 +32,9 @@ connections.connect(
 )
 
 # Define the schema for Milvus collection
-collection_name = "image_embeddings_h14"
+collection_name = "vit_embedding_h14_quickgelu"
 collection = Collection(name=collection_name)
 
-# Replace Elasticsearch client initialization with OpenSearch
-region = os.getenv('AWS_REGION')
-service = 'aoss'
-aws_access_key = os.getenv('AWS_ACCESS_KEY')
-aws_secret_key = os.getenv('AWS_SECRET_KEY')
-host = os.getenv('HOST_OPENSEARCH')
-session = boto3.Session(
-    aws_access_key_id=aws_access_key,
-    aws_secret_access_key=aws_secret_key,
-    region_name=region
-)
-
-credentials = session.get_credentials().get_frozen_credentials()
-
-awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
-                   region, service, session_token=credentials.token)
 
 client = Elasticsearch(
   os.getenv('ELASTICSEARCH_URL'),  
@@ -61,7 +44,7 @@ client = Elasticsearch(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Load CLIP
 clip_model, _, preprocess = open_clip.create_model_and_transforms(
-   'ViT-H/14-quickgelu', pretrained='dfn5b')
+    'ViT-H-14-378-quickgelu', pretrained='dfn5b')
 clip_model.to(device)
 
 def encode_text(text):

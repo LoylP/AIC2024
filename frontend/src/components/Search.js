@@ -33,6 +33,8 @@ const Search = () => {
 	//Show video
 	const videoRef = useRef(null);
 	const [time, setTime] = useState("");
+	const [inputMode, setInputMode] = useState("kis"); // New state to manage input mode
+
 
 	const handleSeek = () => {
 		if (videoRef.current) {
@@ -282,6 +284,69 @@ const Search = () => {
 		setIsOcrDisabled(false); // Enable OCR input when closing all next queries
 	};
 
+	const handleSubmit = async () => {
+		if (inputMode === "qa") {
+			const number = parseInt(document.querySelector('input[placeholder="Number"]').value);
+			const videos_ID = document.querySelector('input[placeholder="Videos_ID"]').value;
+			const time = parseFloat(document.querySelector('input[placeholder="Time"]').value);
+
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/submit-qa?number=${number}&videos_ID=${videos_ID}&time=${time}`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+				});
+
+				const data = await response.json();
+				message.success("QA submitted successfully!");
+				console.log(data);
+			} catch (error) {
+				console.error("Error submitting QA:", error);
+				message.error("Failed to submit QA");
+			}
+		} else if (inputMode === "kis") {
+			const videos_ID = document.querySelector('input[placeholder="Videos_ID"]').value;
+			const start = parseInt(document.querySelector('input[placeholder="Start Time"]').value) || 0; // Default to 0 if NaN
+			const end = parseInt(document.querySelector('input[placeholder="End Time"]').value) || 0; // Default to 0 if NaN
+
+			// Ensure start and end are valid numbers
+			if (isNaN(start) || isNaN(end)) {
+				message.error("Start and End times must be valid numbers.");
+				return;
+			}
+
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/submit-kis?videos_ID=${videos_ID}&start=${start}&end=${end}`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+				});
+
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+					message.error("Failed to submit KIS");
+				}
+				//Colab
+				const data = await response.json();
+				message.success("KIS submitted successfully!");
+				console.log(data);
+			} catch (error) {
+				console.error("Error submitting KIS:", error);
+				message.error("Failed to submit KIS");
+			}
+		}
+	};
+
+	const handleKis = () => {
+		setInputMode("kis"); // Set input mode to kis
+	};
+
+	const handleQA = () => {
+		setInputMode("qa"); // Set input mode to QA
+	};
+
 	return (
 		<div>
 			<div className="flex flex-col h-screen">
@@ -446,7 +511,7 @@ const Search = () => {
 			{/* Modal for image details */}
 			{showModal && selectedImage && (
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full">
+					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full overflow-y-auto max-h-[100vh]">
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-2xl font-bold text-black">{selectedImage.file}</h2>
 						</div>
@@ -481,13 +546,85 @@ const Search = () => {
 								<strong>Frame:</strong> {selectedImage.frame}
 							</p>
 							<p className="mb-2 text-black">
-									<strong>File:</strong> {selectedImage.file_path}
-								</p>
+								<strong>VideoID:</strong> {selectedImage.VideosId}
+							</p>
+							<p className="mb-2 text-black">
+								<strong>Time:</strong> {selectedImage.time}
+							</p>
+							<p className="mb-2 text-black">
+								<strong>Fps:</strong> {selectedImage.fps}
+							</p>
+						</div>
+						<div className="flex justify-between items-center mb-4">
+							
+							<div className="flex gap-4">
+								{inputMode === "kis" ? ( 
+									<>
+										<input
+											type="text"
+											defaultValue={selectedImage.VideosId}
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Videos_ID"
+										/>
+										<input
+											type="number"
+											defaultValue={selectedImage.time}
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Start Time"
+										/>
+										<input
+											type="number"
+											defaultValue={selectedImage.time} 
+											className="border-2 border-gray-300 bg-white h-10 rounded-lg text-sm focus:outline-none"
+											placeholder="End Time"
+										/>
+									</>
+								) : (
+									<>
+										<input
+											type="number"
+											defaultValue={0} 
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Number"
+										/>
+										<input
+											type="text"
+											defaultValue={selectedImage.VideosId}
+											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
+											placeholder="Videos_ID"
+										/>
+										<input
+											type="number"
+											defaultValue={selectedImage.time} 
+											className="border-2 border-gray-300 bg-white h-10 rounded-lg text-sm focus:outline-none"
+											placeholder="Time"
+										/>
+									</>
+								)}
+							</div>
+						</div>
+						<div className="flex gap-4">
+							<button
+								onClick={handleKis}
+								className="bg-blue-600 text-white w-20 px-2 py-2 rounded hover:bg-black">
+								Kis
+							</button>
+							<button
+								onClick={handleQA}
+								className="bg-blue-600 text-white w-20 px-2 py-2 rounded hover:bg-black">
+								QA
+							</button>
+							<button
+								onClick={handleSubmit}
+								className="bg-green-500 text-white w-20 px-2 py-2 rounded hover:bg-green-700">
+								Submit
+							</button>
 						</div>
 						
 						<p className="mb-2 text-black">
 							<strong>OCR Text:</strong> {selectedImage.ocr_text}
 						</p>
+						
 						<button
 							onClick={handleSearchSimilar}
 							className="bg-blue-500 text-white px-2 py-2 rounded hover:bg-blue-600">

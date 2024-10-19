@@ -170,8 +170,8 @@ async def search_milvus_endpoint(
                         result[key] = None
 
             # Add folder name to the result
-            result["folder"] = result.get('file_path').split('/')[0]
             result['file_path'] = result['file_path'].replace('merged_videos/', '').replace('../', '')
+            result["folder"] = result.get('file_path').split('/')[0]
             fps_list = []  
             with open("static/video_fps.csv", mode='r') as file:
                 reader = csv.DictReader(file)
@@ -325,7 +325,7 @@ async def search_milvus_by_image(
                     processed_result[key] = value
             
             processed_result['file_path'] = processed_result['file_path'].replace('merged_videos/', '').replace('../', '')
-
+            processed_result["folder"] = processed_result.get('file_path').split('/')[0]
             fps_list = []  
             with open("static/video_fps.csv", mode='r') as file:
                 reader = csv.DictReader(file)
@@ -400,10 +400,10 @@ async def search_similar(
             "frame": result.get('frame', ''),
             "file_path": result.get('file_path', ''),
             "similarity": result.get('similarity', 0),
-            "folder": result.get("file_path").split('/')[0]
         }
         
         image_data['file_path'] = image_data['file_path'].replace('merged_videos/', '').replace('../', '')
+        image_data["folder"] = image_data.get('file_path').split('/')[0]
         fps_list = []  
         with open("static/video_fps.csv", mode='r') as file:
             reader = csv.DictReader(file)

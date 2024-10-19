@@ -2,8 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Input, Button, message } from "antd";
 import "./Search.css";
 
-
-const API_BASE_URL = "http://10.102.196.135:8080"
+const API_BASE_URL = "http://localhost:8080";
 
 const { Panel } = Collapse;
 
@@ -35,16 +34,15 @@ const Search = () => {
 	const [time, setTime] = useState("");
 	const [inputMode, setInputMode] = useState("kis"); // New state to manage input mode
 
-
 	const handleSeek = () => {
 		if (videoRef.current) {
 			const folderName = selectedImage.folder; // Assuming selectedImage has the folder name
-			const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25; 
-			
+			const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25;
+
 			// Parse the time and ensure it's a finite number
 			const parsedTime = parseFloat(time);
 			if (isFinite(parsedTime)) {
-				videoRef.current.currentTime = parsedTime / fps; 
+				videoRef.current.currentTime = parsedTime / fps;
 			} else {
 				console.error("Invalid time value:", time);
 			}
@@ -60,7 +58,7 @@ const Search = () => {
 		newNextQueries[index] = value;
 		setNextQueries(newNextQueries);
 		// Removed the condition that disables OCR input based on next queries
-		// setIsOcrDisabled(newNextQueries.some(q => q) || !value); 
+		// setIsOcrDisabled(newNextQueries.some(q => q) || !value);
 
 		// Clear OCR description if any next query is entered
 		if (value) {
@@ -89,7 +87,7 @@ const Search = () => {
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
 				}
-	
+
 				url.searchParams.append("use_expanded_prompt", useExpandedPrompt);
 
 				// Add next queries to the URL
@@ -101,7 +99,7 @@ const Search = () => {
 					});
 				}
 
-				if (searchValue || ocrDescription || nextQueries.some(q => q)) {
+				if (searchValue || ocrDescription || nextQueries.some((q) => q)) {
 					response = await fetch(url);
 				} else {
 					throw new Error("Please provide at least one search criteria");
@@ -113,7 +111,7 @@ const Search = () => {
 				if (ocrDescription) {
 					url.searchParams.append("ocr_filter", ocrDescription);
 				}
-			
+
 				response = await fetch(url, {
 					method: "POST",
 					body: formData,
@@ -165,7 +163,9 @@ const Search = () => {
 	const fetchSurroundingImages = async (imagePath) => {
 		setIsLoading(true);
 		try {
-			const response = await fetch(`${API_BASE_URL}/api/serve-images-around?filename=${encodeURIComponent(imagePath)}`); // Sử dụng biến môi trường
+			const response = await fetch(
+				`${API_BASE_URL}/api/serve-images-around?filename=${encodeURIComponent(imagePath)}`
+			); // Sử dụng biến môi trường
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
@@ -192,9 +192,14 @@ const Search = () => {
 		if (selectedImage) {
 			setIsLoading(true);
 			try {
-				const response = await fetch(`${API_BASE_URL}/api/search_similar?image_path=${encodeURIComponent(selectedImage.file_path)}&ocr_filter=${ocrDescription}&results=100`, {
-					method: "GET",
-				});
+				const response = await fetch(
+					`${API_BASE_URL}/api/search_similar?image_path=${encodeURIComponent(
+						selectedImage.file_path
+					)}&ocr_filter=${ocrDescription}&results=100`,
+					{
+						method: "GET",
+					}
+				);
 
 				if (!response.ok) {
 					throw new Error(`HTTP error! status: ${response.status}`);
@@ -290,16 +295,21 @@ const Search = () => {
 			const time = parseFloat(document.querySelector('input[placeholder="Time"]').value);
 
 			try {
-				const response = await fetch(`${API_BASE_URL}/api/submit-qa?number=${number}&videos_ID=${videos_ID}&time=${time}`, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-				});
+				const response = await fetch(
+					`${API_BASE_URL}/api/submit-qa?number=${number}&videos_ID=${videos_ID}&time=${time}`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+					}
+				);
 
-				const data = await response.json();				
-				if (data.status === true) { // Changed from == to ===
-					if (data.submission === "WRONG") { // Changed from == to ===
+				const data = await response.json();
+				if (data.status === true) {
+					// Changed from == to ===
+					if (data.submission === "WRONG") {
+						// Changed from == to ===
 						message.error(`Sai đáp án!\n${data.description}`);
 					} else {
 						message.success(`Nộp thành công!\n${data.submission}\n${data.description}`);
@@ -323,17 +333,22 @@ const Search = () => {
 			}
 
 			try {
-				const response = await fetch(`${API_BASE_URL}/api/submit-kis?videos_ID=${videos_ID}&start=${start}&end=${end}`, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-				});
+				const response = await fetch(
+					`${API_BASE_URL}/api/submit-kis?videos_ID=${videos_ID}&start=${start}&end=${end}`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+					}
+				);
 
 				//Colab
-				const data = await response.json();				
-				if (data.status === true) { // Changed from == to ===
-					if (data.submission === "WRONG") { // Changed from == to ===
+				const data = await response.json();
+				if (data.status === true) {
+					// Changed from == to ===
+					if (data.submission === "WRONG") {
+						// Changed from == to ===
 						message.error(`Sai đáp án!\n${data.description}`);
 					} else {
 						message.success(`Nộp thành công!\n${data.submission}\n${data.description}`);
@@ -400,7 +415,9 @@ const Search = () => {
 								onChange={handleFileChange}
 							/>
 						)}
-						<div className="flex items-center mb-4"> {/* New div for the expand button */}
+						<div className="flex items-center mb-4">
+							{" "}
+							{/* New div for the expand button */}
 							<input
 								type="checkbox"
 								checked={useExpandedPrompt}
@@ -431,7 +448,7 @@ const Search = () => {
 						</div>
 						<button
 							onClick={handleButtonSearch}
-							disabled={inputType === "text" ? (!searchValue && !ocrDescription) : !selectedFile}
+							disabled={inputType === "text" ? !searchValue && !ocrDescription : !selectedFile}
 							className="text-search-btn">
 							Search
 						</button>
@@ -469,8 +486,7 @@ const Search = () => {
 										<div className="flex items-center">
 											<Button
 												onClick={handleExportCSV}
-												className="mr-4 bg-green-500 text-white hover:bg-green-600"
-											>
+												className="mr-4 bg-green-500 text-white hover:bg-green-600">
 												Export to CSV
 											</Button>
 											<div className="flex">
@@ -520,7 +536,9 @@ const Search = () => {
 			{/* Modal for image details */}
 			{showModal && selectedImage && (
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-					<div ref={modalRef} className="bg-white p-6 rounded-lg max-w-2xl w-full overflow-y-auto max-h-[100vh]">
+					<div
+						ref={modalRef}
+						className="bg-white p-6 rounded-lg max-w-2xl w-full overflow-y-auto max-h-[100vh]">
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-2xl font-bold text-black">{selectedImage.file}</h2>
 						</div>
@@ -536,11 +554,16 @@ const Search = () => {
 								autoPlay
 								onLoadedMetadata={() => {
 									const folderName = selectedImage.folder;
-									const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25;
+									const fps =
+										folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13
+											? 30
+											: 25;
 									videoRef.current.currentTime = selectedImage.frame / fps;
-								}}
-							>
-								<source src={`${API_BASE_URL}/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`} type="video/mp4" />
+								}}>
+								<source
+									src={`${API_BASE_URL}/videos/${selectedImage.folder}/${selectedImage.VideosId}.mp4`}
+									type="video/mp4"
+								/>
 								Your browser does not support the video tag.
 							</video>
 						) : (
@@ -565,9 +588,8 @@ const Search = () => {
 							</p>
 						</div>
 						<div className="flex justify-between items-center mb-4">
-							
 							<div className="flex gap-4">
-								{inputMode === "kis" ? ( 
+								{inputMode === "kis" ? (
 									<>
 										<input
 											type="text"
@@ -583,7 +605,7 @@ const Search = () => {
 										/>
 										<input
 											type="number"
-											defaultValue={selectedImage.time} 
+											defaultValue={selectedImage.time}
 											className="border-2 border-gray-300 bg-white h-10 rounded-lg text-sm focus:outline-none"
 											placeholder="End Time"
 										/>
@@ -592,7 +614,7 @@ const Search = () => {
 									<>
 										<input
 											type="number"
-											defaultValue={0} 
+											defaultValue={0}
 											className="border-2 border-gray-300 bg-white rounded-lg text-sm focus:outline-none"
 											placeholder="Number"
 										/>
@@ -604,7 +626,7 @@ const Search = () => {
 										/>
 										<input
 											type="number"
-											defaultValue={selectedImage.time} 
+											defaultValue={selectedImage.time}
 											className="border-2 border-gray-300 bg-white h-10 rounded-lg text-sm focus:outline-none"
 											placeholder="Time"
 										/>
@@ -629,36 +651,40 @@ const Search = () => {
 								Submit
 							</button>
 						</div>
-						
+
 						<p className="mb-2 text-black">
 							<strong>OCR Text:</strong> {selectedImage.ocr_text}
 						</p>
-						
+
 						<button
 							onClick={handleSearchSimilar}
 							className="bg-blue-500 text-white px-2 py-2 rounded hover:bg-blue-600">
 							Search Similar
 						</button>
 						<button
-							onClick={() => setShowVideo(!showVideo)} 
+							onClick={() => setShowVideo(!showVideo)}
 							className="bg-green-500 text-white px-2 py-2 rounded hover:bg-green-600 ml-2">
 							{showVideo ? "Frame" : "Video"}
 						</button>
 						<input
 							type="text"
 							value={time}
-							onChange={(e) => setTime(e.target.value)} 
+							onChange={(e) => setTime(e.target.value)}
 							placeholder="Enter frame"
 							className="bg-white-500 text-black px-2 py-2 rounded"
 						/>
-						<button onClick={handleSeek} className="bg-amber-500 text-white px-2 py-2 rounded hover:bg-amber-600 ml-2">
+						<button
+							onClick={handleSeek}
+							className="bg-amber-500 text-white px-2 py-2 rounded hover:bg-amber-600 ml-2">
 							Move
 						</button>
 
 						{/* Display surrounding images */}
 						<div className="mt-2 grid grid-cols-3 gap-1 overflow-y-auto max-h-44">
 							{surroundingImages.map((img, index) => (
-								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, file_path: img })}> {/* Update selected image on click */}
+								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, file_path: img })}>
+									{" "}
+									{/* Update selected image on click */}
 									<img
 										src={`${API_BASE_URL}/images/${img}`}
 										alt={`Surrounding ${index + 1}`}
@@ -675,4 +701,3 @@ const Search = () => {
 };
 
 export default Search;
-					

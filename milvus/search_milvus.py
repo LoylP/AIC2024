@@ -32,7 +32,7 @@ connections.connect(
 )
 
 # Define the schema for Milvus collection
-collection_name = "vit_embedding_h14_quickgelu"
+collection_name = "vit_embedding_siglip_400m"
 collection = Collection(name=collection_name)
 
 
@@ -44,7 +44,7 @@ client = Elasticsearch(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Load CLIP
 clip_model, _, preprocess = open_clip.create_model_and_transforms(
-    'ViT-H-14-378-quickgelu', pretrained='dfn5b')
+    'ViT-SO400M-14-SigLIP-384', pretrained='webli')
 clip_model.to(device)
 
 def encode_text(text):

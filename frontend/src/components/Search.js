@@ -2,12 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Input, Button, message } from "antd";
 import "./Search.css";
 
-<<<<<<< HEAD
-const API_BASE_URL = "http://localhost:8080";
-=======
 
 const API_BASE_URL = "http://127.0.0.1:8080"
->>>>>>> 3631fc3affb9d843de6cd9373f20896a842ab063
 
 const { Panel } = Collapse;
 

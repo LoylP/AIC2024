@@ -3,9 +3,11 @@ __pycache__/
 .env
 .env.*
 ./frontend/node_modules/
+/static/
 static/keyframes_preprocess
 static/keyframes_preprocess_2
 static/videos
 static/map
 unilm/
 env/
+static/Video

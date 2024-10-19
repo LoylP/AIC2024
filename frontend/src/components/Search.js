@@ -3,14 +3,14 @@ import { Spin, Collapse, Input, Button, message } from "antd";
 import "./Search.css";
 
 
-const API_BASE_URL = "http://10.102.196.135:8080"
+const API_BASE_URL = "http://127.0.0.1:8080"
 
 const { Panel } = Collapse;
 
 const Search = () => {
 	const [inputType, setInputType] = useState("text");
 	const [searchValue, setSearchValue] = useState("");
-	const [nextQueries, setNextQueries] = useState([""]); // New state for next queries
+	const [nextQueries, setNextQueries] = useState([""]);
 	const [results, setResults] = useState([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [ocrDescription, setOcrDescription] = useState("");
@@ -20,9 +20,9 @@ const Search = () => {
 	const [isLoading, setIsLoading] = useState(false);
 	const modalRef = useRef(null);
 	const [useExpandedPrompt, setUseExpandedPrompt] = useState(false);
-	const [isOcrDisabled, setIsOcrDisabled] = useState(false); // New state to control OCR input
-	const [showVideo, setShowVideo] = useState(false); // New state to control video visibility
-	const [surroundingImages, setSurroundingImages] = useState([]); // New state for surrounding images
+	const [isOcrDisabled, setIsOcrDisabled] = useState(false);
+	const [showVideo, setShowVideo] = useState(false); 
+	const [surroundingImages, setSurroundingImages] = useState([]); 
 
 	const itemsPerPage = 25;
 
@@ -33,15 +33,17 @@ const Search = () => {
 	//Show video
 	const videoRef = useRef(null);
 	const [time, setTime] = useState("");
-	const [inputMode, setInputMode] = useState("kis"); // New state to manage input mode
+	const [inputMode, setInputMode] = useState("kis"); 
 
 
 	const handleSeek = () => {
 		if (videoRef.current) {
-			const folderName = selectedImage.folder; // Assuming selectedImage has the folder name
-			const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25; 
+			const folderName = selectedImage.folder; 
+			let fps = videoRef.current.fps; 
+			if (!fps) { 
+				fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25; 
+			}
 			
-			// Parse the time and ensure it's a finite number
 			const parsedTime = parseFloat(time);
 			if (isFinite(parsedTime)) {
 				videoRef.current.currentTime = parsedTime / fps; 
@@ -558,7 +560,7 @@ const Search = () => {
 								<strong>VideoID:</strong> {selectedImage.VideosId}
 							</p>
 							<p className="mb-2 text-black">
-								<strong>Time:</strong> {selectedImage.time}
+								<strong>Time(ms):</strong> {selectedImage.time}
 							</p>
 							<p className="mb-2 text-black">
 								<strong>Fps:</strong> {selectedImage.fps}

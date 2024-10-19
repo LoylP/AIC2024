@@ -130,7 +130,6 @@ opt-einsum==3.3.0
 optree==0.12.1
 orjson==3.10.7
 packaging==24.1
-paddle-bfloat==0.1.7
 parseq==2024.5.0
 parso==0.8.4
 pexpect==4.9.0
@@ -156,8 +155,7 @@ pydantic_core==2.20.1
 pydantic-extra-types==2.9.0
 pydantic-settings==2.4.0
 Pygments==2.18.0
-pymilvus==2.4.5
-pymongo==4.8.0
+pymilvus
 pynndescent==0.5.13
 pyparsing==3.1.2
 pyppmd==1.1.0
@@ -166,7 +164,6 @@ PyQt5-Qt5==5.15.14
 PyQt5_sip==12.15.0
 PyQtWebEngine==5.15.7
 PyQtWebEngine-Qt5==5.15.14
-pytesseract==0.3.13
 python-bidi==0.6.0
 python-dateutil==2.9.0
 python-docx==1.1.2
@@ -260,7 +257,6 @@ wsproto==1.2.0
 xmltodict==0.13.0
 yarl==1.9.11
 zipp==3.20.0
-pymilvus==2.4.6
 faiss-cpu 
 open_clip_torch
 elasticsearch==8.15.1

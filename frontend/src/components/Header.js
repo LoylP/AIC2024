@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import logo from "../logo.svg";
+import logo from "../static/logo.png";
 
 const Header = ({ children }) => {
   return (

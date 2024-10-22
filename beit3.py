@@ -43,8 +43,8 @@ app.mount("/images", StaticFiles(directory=path), name="images")
 
 
 client = Elasticsearch(
-  "https://ocrfilter-a5f7b1.es.us-east-1.aws.elastic.cloud:443",
-  api_key="WlRFZU41SUJ2UVZGR3NGbkU0V0Y6TWRpTzdyZ0FTUDJPWnF3TEh0WnVoUQ=="
+  "https://ocr-bc3350.es.us-east-1.aws.elastic.cloud:443",
+  api_key="U00xNHA1SUI3X1BEWkdFaUdCNGg6ZWFEZWl1N21RZ2FIc1RRZ0tmUG9OZw=="
 )
 
 # MongoDB connection
@@ -464,7 +464,7 @@ async def get_surrounding_images(filename: str = Query(..., description="Path of
     return {"surrounding_images": images}
 
 @app.post("/api/submit-qa")
-async def submit_qa(number: int, videos_ID: str, time: float):
+async def submit_qa(number: int, videos_ID: str, time: int):
     body_data = {
         "answerSets": [
             {
@@ -476,9 +476,9 @@ async def submit_qa(number: int, videos_ID: str, time: float):
             }
         ]
     }
-    url = "https://eventretrieval.one/api/v2/submit/bec3b699-bdea-4f2c-94ae-61ee065fa76e"
+    url = "https://eventretrieval.one/api/v2/submit/4a3a4519-a9a9-47e2-b6b4-acc9ae55114f"
     params = {
-        "session": "u3I0UsCTHiOIfBEuYw3d7G34UhKZ16oq"
+        "session": "g6uq-QuzSdJrzOwrIdYtaBHqHpmfQQ2s"
     }
 
     try:
@@ -503,9 +503,9 @@ async def submit_kis(videos_ID: str, start: int, end: int):
             }
         ]
     }
-    url = "https://eventretrieval.one/api/v2/submit/69ec2262-d829-4ac1-94a2-1aa0a6693266"
+    url = "https://eventretrieval.one/api/v2/submit/4a3a4519-a9a9-47e2-b6b4-acc9ae55114f"
     params = {
-        "session": "u3I0UsCTHiOIfBEuYw3d7G34UhKZ16oq"
+        "session": "g6uq-QuzSdJrzOwrIdYtaBHqHpmfQQ2s"
     }
 
     try:

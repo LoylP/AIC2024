@@ -41,7 +41,7 @@ client = Elasticsearch(
   api_key=os.getenv('ELASTICSEARCH_API_KEY')  
 )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 # Load CLIP H/14
 clip_model, _, preprocess = open_clip.create_model_and_transforms(
     'ViT-H-14-378-quickgelu', pretrained='dfn5b')
@@ -70,44 +70,6 @@ def encode_image(image_content):
     encoded_image = image_features.cpu().numpy().flatten()
 
     return encoded_image.tolist()
-
-# Load BEIT3 model and tokenizer
-# beit_model = BeitModel.from_pretrained(
-#     'Raghavan/beit3_base_patch16_384_coco_retrieval').to(device)
-# feature_extractor = BeitFeatureExtractor.from_pretrained(
-#     'Raghavan/beit3_base_patch16_384_coco_retrieval')
-
-# # Load the XLMRoberta tokenizer for BEiT-3
-# text_tokenizer = XLMRobertaTokenizer(
-#     "/home/loylp/project/AIC2024/static/beit3.spm")
-
-# # Load a text model
-# text_model = AutoModel.from_pretrained('bert-base-uncased').to(device)
-
-
-# def encode_text(text):
-#     tokens = text_tokenizer(text, return_tensors="pt", max_length=512,
-#                             padding=True, truncation=True).to(device)
-#     with torch.no_grad():
-#         with autocast():  # Enable mixed precision
-#             # Extract the [CLS] token embedding
-#             text_features = text_model(
-#                 **tokens).last_hidden_state[:, 0, :].float()
-#     encoded_text = text_features.cpu().numpy().flatten()
-#     return encoded_text.tolist()
-
-
-# def encode_image(image_content):
-#     image = Image.open(io.BytesIO(image_content)).convert('RGB')
-#     inputs = feature_extractor(images=image, return_tensors="pt").to(device)
-#     with torch.no_grad():
-#         with autocast():  # Enable mixed precision
-#             # Take the mean of all patches
-#             image_features = beit_model(
-#                 **inputs).last_hidden_state.mean(dim=1).float()
-#     encoded_image = image_features.cpu().numpy().flatten()
-#     return encoded_image.tolist()
-
 
 def frame_to_timestamp(frame, fps):
     return frame / fps  
@@ -167,7 +129,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                     "id": result.entity.get("id"),
                     "VideosId": result.entity.get("VideosId").split("/")[-1] if result.entity.get("VideosId") else None,
                     "frame": result.entity.get("frame"),
-                    "file_path": result.entity.get("file_path"),
+                    "file_path": result.entity.get("file_path").replace('./merged_videos/', ''),
                     "similarity": result.distance,
                     "source": "main"  # Mark as main query result
                 })
@@ -247,7 +209,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
             },
             "size": limit  # Use the same limit as Milvus search
         }
-        es_results = client.search(index="ocr", body=es_query)
+        es_results = client.search(index="ocr_filter", body=es_query)
 
         for hit in es_results['hits']['hits']:
             file_path = hit['_source']['path']
@@ -262,7 +224,7 @@ def query(query_text=None, ocr_filter=None, next_queries=None, limit=300, ef_sea
                 combined_results[file_path] = {
                     "id": hit['_id'],
                     "VideosId": file_path.split("/")[-2] if file_path else None,
-                    "frame": file_path.split("/")[-1] if file_path else None,
+                    "frame": int(file_path.split("/")[-1].replace('.jpg', '')) if file_path else None,
                     "file_path": file_path,
                     "ocr_text": ocr_text,
                     "ocr_score": hit['_score'],
@@ -380,7 +342,7 @@ def get_ocr_text(file_path):
             }
         }
         response = client.search(
-            index="ocr",
+            index="ocr_filter",
             body=search_body
         )
         # Check if the response contains hits
@@ -391,9 +353,9 @@ def get_ocr_text(file_path):
     return ""
 
 
-# print(f"Device: {device}")
+print(f"Device: {device}")
 
-query = "person"
-milvus_results, search_time = query(query_text=query)
-print(milvus_results)
-print(search_time)
+# input_query = "A person"
+# ocr = "Clarus"
+# search, time = query(input_query, ocr)
+# print(search)

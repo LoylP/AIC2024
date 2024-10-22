@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Spin, Collapse, Input, Button, message } from "antd";
+import logo from "../static/logo.png";
 import "./Search.css";
 
 
-const API_BASE_URL = "http://127.0.0.1:8080"
+const API_BASE_URL = "http://127.0.0.1:8000"
 
 const { Panel } = Collapse;
 
@@ -37,19 +38,11 @@ const Search = () => {
 
 	const handleSeek = () => {
 		if (videoRef.current) {
-<<<<<<< HEAD
-			const folderName = selectedImage.folder; // Assuming selectedImage has the folder name
-			const fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25;
-
-			// Parse the time and ensure it's a finite number
-=======
 			const folderName = selectedImage.folder; 
 			let fps = videoRef.current.fps; 
 			if (!fps) { 
 				fps = folderName.startsWith("Videos_L") && parseInt(folderName.slice(-2)) >= 13 ? 30 : 25; 
 			}
-			
->>>>>>> 3631fc3affb9d843de6cd9373f20896a842ab063
 			const parsedTime = parseFloat(time);
 			if (isFinite(parsedTime)) {
 				videoRef.current.currentTime = parsedTime / fps;
@@ -392,7 +385,7 @@ const Search = () => {
 							backgroundColor: "white",
 						}}>
 						<h1 className="text-4xl font-bold text-center mb-6 bg-gradient-to-r from-blue-500 to-teal-400 text-transparent bg-clip-text drop-shadow-lg font-sans tracking-wide">
-							W1-Artemis
+							<img src={logo} className="h-full" alt="logo" />
 						</h1>
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-2xl font-bold text-black">Your query</h2>
@@ -690,7 +683,7 @@ const Search = () => {
 						</button>
 
 						{/* Display surrounding images */}
-						<div className="mt-2 grid grid-cols-3 gap-1 overflow-y-auto max-h-44">
+						<div className="mt-2 grid grid-cols-3 gap-1 max-h-44">
 							{surroundingImages.map((img, index) => (
 								<div key={index} onClick={() => setSelectedImage({ ...selectedImage, file_path: img })}>
 									{" "}

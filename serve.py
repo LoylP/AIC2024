@@ -42,8 +42,8 @@ app.mount("/images", StaticFiles(directory=path), name="images")
 
 
 client = Elasticsearch(
-  "https://ocrfilter-a5f7b1.es.us-east-1.aws.elastic.cloud:443",
-  api_key="WlRFZU41SUJ2UVZGR3NGbkU0V0Y6TWRpTzdyZ0FTUDJPWnF3TEh0WnVoUQ=="
+  "https://ocr-bc3350.es.us-east-1.aws.elastic.cloud:443",
+  api_key="XzhjUHA1SUI3X1BEWkdFaVZ0d246VmYzY1hjazdRcWkyaDg2eHh0VW5vQQ=="
 )
 
 # MongoDB connection
@@ -130,9 +130,10 @@ async def search_milvus_endpoint(
             expanded_prompt = translated_query
 
         # Search with the main query
+        print(f"Searching in Milvus with query: {expanded_prompt}, OCR filter: {ocr_filter}")
         milvus_results, search_time = milvus_search.query(
             expanded_prompt, ocr_filter, limit=1000, ef_search=ef_search, nprobe=nprobe)
-
+        
         # Process next queries
         if next_queries:
             for next_query in next_queries:
@@ -167,9 +168,14 @@ async def search_milvus_endpoint(
                 if isinstance(value, float):
                     if math.isnan(value) or math.isinf(value):
                         result[key] = None
+                elif key == 'frame':  # Check if 'frame' is convertible to int
+                    try:
+                        result['frame'] = int(value)  # Ensure this is an integer
+                    except ValueError:
+                        result['frame'] = None  # Handle the error gracefully
 
             # Add folder name to the result
-            result['file_path'] = result['file_path'].replace('merged_videos/', '')
+            # result['file_path'] = result['file_path'].replace('./merged_videos/', '')
             result["folder"] = result.get('file_path').split('/')[1]
             fps_list = []  
             with open("static/video_fps.csv", mode='r') as file:
@@ -209,6 +215,7 @@ async def search_milvus_endpoint(
             "translated_query": translated_query
         })
     except Exception as e:
+        print(f"Error occurred: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"An error occurred: {str(e)}")
 
@@ -325,7 +332,7 @@ async def search_milvus_by_image(
                 else:
                     processed_result[key] = value
             
-            processed_result['file_path'] = processed_result['file_path'].replace('merged_videos/', '')
+            processed_result['file_path'] = processed_result['file_path'].replace('./merged_videos/', '')
             processed_result["folder"] = processed_result.get('file_path').split('/')[1]
 
             fps_list = []  
@@ -404,7 +411,7 @@ async def search_similar(
             "similarity": result.get('similarity', 0),
         }
         
-        image_data['file_path'] = image_data['file_path'].replace('merged_videos/', '')
+        image_data['file_path'] = image_data['file_path'].replace('./merged_videos/', '')
         image_data["folder"] = image_data.get('file_path').split('/')[1]
         fps_list = []  
         with open("static/video_fps.csv", mode='r') as file:

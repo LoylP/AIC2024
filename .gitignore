@@ -1,7 +1,6 @@
 
 __pycache__/
-.env
-.env.*
+
 ./frontend/node_modules/
 /static/
 static/keyframes_preprocess
